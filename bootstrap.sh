@@ -83,10 +83,6 @@ main() {
     install_postgres_client
     install_docker
     install_kubernetes_tools
-<<<<<<< HEAD
-=======
-
->>>>>>> dev
     log "Bootstrap completed!"
     log "Please log out and log back in (or run 'newgrp docker') to use Docker without sudo."
     log "Run 'minikube start --driver=docker --nodes 3' to start your Kubernetes cluster."
