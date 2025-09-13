@@ -52,12 +52,33 @@ install_docker() {
     sudo usermod -aG docker vagrant
 }
 
+install_kubernetes_tools() {
+    log "Installing Kubernetes tools (kubectl, minikube, kind)..."
+    # Install kubectl
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+    rm kubectl
+
+    # Install minikube
+    curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+    sudo install minikube-linux-amd64 /usr/local/bin/minikube
+    rm minikube-linux-amd64
+
+}
+
 main() {
     update_system
     install_basic_tools
     install_postgres_client
     install_docker
-    log "Bootstrap completed! Please log out and log back in (or run 'newgrp docker') to use Docker without sudo."
+    install_kubernetes_tools
+    log "Bootstrap completed!"
+    log "Please log out and log back in (or run 'newgrp docker') to use Docker without sudo."
+    log "Run 'minikube start --driver=docker --nodes 3' to start your Kubernetes cluster."
+    log "After that, you can label nodes with:"
+    echo "kubectl label node minikube type=application"
+    echo "kubectl label node minikube-m02 type=database"
+    echo "kubectl label node minikube-m03 type=dependent_services"
 }
 
 main "$@"
