@@ -4,6 +4,9 @@ set -e  # exit on error
 set -u  # treat unset vars as errors
 set -o pipefail # catch errors in pipelines
 
+GREEN='\033[0;32m'
+NC='\033[0m'
+
 log() {
     echo -e "${GREEN}[+] $1${NC}"
 }
@@ -19,7 +22,7 @@ install_basic_tools() {
     sudo apt-get install -y \
         curl wget unzip git make \
         python3 python3-pip python3-venv \
-        software-properties-common
+        software-properties-common apt-transport-https ca-certificates gnupg lsb-release
 }
 
 install_postgres_client() {
@@ -29,11 +32,7 @@ install_postgres_client() {
 
 install_docker() {
     log "Installing Docker CE..."
-    # Remove older versions if any
     sudo apt-get remove -y docker docker-engine docker.io containerd runc || true
-
-    # Install prerequisites
-    sudo apt-get install -y apt-transport-https ca-certificates gnupg lsb-release
 
     # Add Docker’s official GPG key
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker.gpg
@@ -43,13 +42,25 @@ install_docker() {
       "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
       $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-    # Install Docker
     sudo apt-get update -y
     sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-    # Enable & add vagrant user to docker group
     sudo systemctl enable docker
-    sudo usermod -aG docker vagrant
+    sudo usermod -aG docker vagrant || true
+}
+
+install_kubernetes_tools() {
+    log "Installing Kubernetes tools (kubectl, minikube)..."
+
+    # Install kubectl
+    curl -LO "https://dl.k8s.io/release/$(curl -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    chmod +x kubectl
+    sudo mv kubectl /usr/local/bin/
+
+    # Install minikube
+    curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+    sudo install minikube-linux-amd64 /usr/local/bin/minikube
+    rm -f minikube-linux-amd64
 }
 
 main() {
@@ -57,7 +68,15 @@ main() {
     install_basic_tools
     install_postgres_client
     install_docker
-    log "Bootstrap completed! Please log out and log back in (or run 'newgrp docker') to use Docker without sudo."
+    install_kubernetes_tools
+
+    log "Bootstrap completed!"
+    log "Please log out and log back in (or run 'newgrp docker') to use Docker without sudo."
+    log "Run 'minikube start --driver=docker --nodes 3' to start your Kubernetes cluster."
+    log "After that, you can label nodes with:"
+    echo "kubectl label node minikube type=application"
+    echo "kubectl label node minikube-m02 type=database"
+    echo "kubectl label node minikube-m03 type=dependent_services"
 }
 
 main "$@"
