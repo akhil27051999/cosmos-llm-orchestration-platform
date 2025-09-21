@@ -81,20 +81,20 @@ With this we can able to:**
   pip freeze > requirements.txt
   ```
 
-## Project Local Setup
+## Project local setup
 
-- **Install dependencies**
+**1. Install dependencies**
   ```txt
   make install
   ```
   - (or run pip install -r requirements.txt directly)
 
-- **Run the App**
+**2. Run the App**
   ```txt
   make run
   ```
 
-- **Flask app will start at:**
+**3. Flask app will start at:**
   ```url
   http://127.0.0.1:5000
   ```
@@ -104,7 +104,7 @@ With this we can able to:**
     - /health → Health check
     - /students → Manage students
       
-- **Run all unit tests:**
+**4. Run all unit tests:**
   ```txt
   make test
   ```
@@ -123,9 +123,10 @@ With this we can able to:**
 
   - Overall I managed to reduce the original `1.26GB` image to just `110MB`, achieving a `91.27%` size decrease while maintaining the same functionality and improving rebuild times by an average of 20 seconds.
 
-#### Docker Commands
+### Docker Commands
 
-- **Build the Docker Image:**
+**1. Build the Docker Image:**
+
   - Built the image with semantic versioning tags:
   ```sh
   make docker-build DOCKER_IMAGE_TAG=1.0.1
@@ -137,7 +138,7 @@ With this we can able to:**
   ```
   - We can change the `DOCKER_IMAGE_TAG` to any version.
 
-- **Run the Docker Container:**
+**2. Run the Docker Container:**
   - Run the container 
   ```sh
   make docker-run DOCKER_IMAGE_TAG=1.0.1
@@ -152,7 +153,7 @@ With this we can able to:**
   http://localhost:5000
   ```
 
-- **To Remove the Containers:**
+**3. To Remove the Containers:**
   - To remove the containers using make command
   ```sh
   make docker-stop
@@ -165,7 +166,7 @@ With this we can able to:**
   docker rm ${DOCKER_CONTAINER}
   ```
 
-- **To Remove the unused images:**
+**4. To Remove the unused images:**
   - To remove the images using make command
   ```sh
   make docker-clean
@@ -177,7 +178,7 @@ With this we can able to:**
   docker rmi ${DOCKER_IMAGE}:${DOCKER_IMAGE_TAG}
   ```
 
-- **For Troubleshooting Container issue:**
+**5. For Troubleshooting Container issue:**
   - To check container logs using make command
   ```sh
   make docker logs
@@ -190,11 +191,11 @@ With this we can able to:**
   
 ## One click local development setup
 
-- Created docker-compose.yml file to containerise Flask (API) and Postgres (DB) together, with persistent volumes for one click local development setup.
+**Created docker-compose.yml file to containerise Flask (API) and Postgres (DB) together, with persistent volumes for one click local development setup.**
 
 ### Docker Compose Commands
 
-1. To start the service stack 
+**1. To start the service stack**
   ```sh
   docker compose up -d --build
   ```
@@ -204,7 +205,7 @@ With this we can able to:**
   make up
   ```
 
-2. To stop and remove everything (including volumes)
+**2. To stop and remove everything (including volumes)**
   ```sh
   docker compose down -v
   ```
@@ -216,9 +217,9 @@ With this we can able to:**
   ```
 
 ### For Database Migration & Seeding
-  - After starting the containers, you need to run migrations (to create tables) and optionally seed data.
+**After starting the containers, you need to run migrations (to create tables) and optionally seed data.**
 
-1. Apply migrations inside the Flask container
+**1. Apply migrations inside the Flask container**
   ```sh
   docker exec -it flask-container flask db upgrade
   ```
@@ -229,7 +230,7 @@ With this we can able to:**
   make migrate
   ```
 
-2. To Seed the database with initial data
+**2. To Seed the database with initial data**
   ```sh
   docker exec -it flask-container python seed.py
   ```
@@ -240,7 +241,7 @@ With this we can able to:**
   make seed
   ```
 
-3. Verify Database
+**3. Verify Database**
 
 - To connect into the Postgres container
   ```sh
@@ -253,7 +254,7 @@ With this we can able to:**
   SELECT * FROM students LIMIT 5;
   ```
 
-4. To Run API container (depends on DB + migrations + seed)
+**4. To Run API container (depends on DB + migrations + seed)**
 
   ```txt
   make run
@@ -266,3 +267,96 @@ With this we can able to:**
   http://localhost:5000/students
 
   http://localhost:5000/health
+
+
+## Setup CI pipeline
+
+**Automation for build, test, and publish of Docker images using GitHub Actions workflow for CI pipeline**
+
+### pipeline stages
+- Build API → make sure it compiles.
+- Run tests → unit tests should pass.
+- Lint → run flake8/pylint/eslint.
+- Docker login → authenticate to registry (DockerHub/GHCR).
+- Docker build & push → push tagged image.
+
+### Triggering
+
+- Automatically when changes are made inside /api/**.
+- Manual trigger (workflow_dispatch).
+
+### Self-hosted runner
+- GitHub Actions running on our laptop/VM to simulate real-world self-hosted CI.
+
+**At the end: "Every commit to main will test your code and publish a Docker image"**
+
+## Deploy on Bare Metal
+**To deploy on a “production-like” environment without Kubernetes — just Docker + Nginx on a Vagrant box.**
+
+#### Key Points
+
+- Vagrantfile creates a VM (e.g., Ubuntu).
+- A provisioning script installs Docker, Docker Compose, Nginx.
+- docker-compose.yml deploys:
+  - 2 API containers (scale with replicas).
+  - 1 Postgres DB container.
+  - 1 Nginx container (load balances API replicas).
+
+### Nginx config
+
+```nginx
+upstream api_backend {
+    server api1:5000;
+    server api2:5000;
+}
+server {
+    listen 8080;
+    location / {
+        proxy_pass http://api_backend;
+    }
+}
+```
+- **Access API at http://localhost:8080/api/v1/students.**
+- **At the end: "we’ll have a mini production setup with scaling + load balancing".**
+
+## Setup Kubernetes Cluster
+
+**Spin up a 3-node Kubernetes cluster with Minikube.**
+
+#### Key Points
+
+- **Start minikube with 3 nodes:**
+  ```sh
+  minikube start --nodes=3
+  ```
+
+- **Label nodes:**
+  - Node A → type=application
+  - Node B → type=database
+  - Node C → type=dependent_services
+
+- This enforces workload isolation (apps on one node, DB on another, monitoring tools on another).
+
+**At the end: "we have a real K8s cluster with node roles".**
+
+## Deploy API, DB and other services in Kubernetes
+
+**Move from Docker Compose → Kubernetes deployment.**
+
+#### Key Points
+
+- **Manifests should be modular:**
+  - **application.yml** → namespace, configmap, secret, deployment, service for API.
+  - **database.yml** → namespace, deployment, service for Postgres.
+
+- **Init container** → runs DB migrations before starting API.
+- **ConfigMaps** → non-sensitive configs (e.g., DB host).
+- **Secrets** → sensitive info (DB password).
+- **External Secrets Operator + Vault** → manage secrets properly.
+- **Services** →
+  - ClusterIP for DB (internal only).
+  - NodePort/LoadBalancer for API (external access).
+- **Namespace isolation** → student-api for app + db, others for observability.
+- **Test via Postman**: all endpoints should work and return 200.
+
+**At the end: "Our app is cloud-ready, secure, and scalable on Kubernetes".**
