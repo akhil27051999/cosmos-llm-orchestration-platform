@@ -293,7 +293,7 @@ With this we can able to:**
 ## Deploy on Bare Metal
 **To deploy on a “production-like” environment without Kubernetes — just Docker + Nginx on a Vagrant box.**
 
-#### Key Points
+### Key Points
 
 - Vagrantfile creates a VM (e.g., Ubuntu).
 - A provisioning script installs Docker, Docker Compose, Nginx.
@@ -323,7 +323,7 @@ server {
 
 **Spin up a 3-node Kubernetes cluster with Minikube.**
 
-#### Key Points
+### Key Points
 
 - **Start minikube with 3 nodes:**
   ```sh
@@ -337,13 +337,28 @@ server {
 
 - This enforces workload isolation (apps on one node, DB on another, monitoring tools on another).
 
+### Minikube Cluster setup commands
+
+```sh
+# Start a 3-node cluster
+minikube start --nodes 3
+
+# Check all nodes
+kubectl get nodes -o wide
+
+# Label nodes for workload separation
+kubectl label node minikube type=application
+kubectl label node minikube-m02 type=database
+kubectl label node minikube-m03 type=dependent_services
+```
+
 **At the end: "we have a real K8s cluster with node roles".**
 
 ## Deploy API, DB and other services in Kubernetes
 
 **Move from Docker Compose → Kubernetes deployment.**
 
-#### Key Points
+### Key Points
 
 - **Manifests should be modular:**
   - **application.yml** → namespace, configmap, secret, deployment, service for API.
@@ -359,4 +374,66 @@ server {
 - **Namespace isolation** → student-api for app + db, others for observability.
 - **Test via Postman**: all endpoints should work and return 200.
 
+### K8s deployment and verification commands
+
+- **Deploy API + DB**
+  ```sh
+  kubectl apply -f k8s/database.yml
+  kubectl apply -f k8s/application.yml
+  ```
+
+- **Deploy Vault + ESO**
+  ```sh
+  kubectl apply -f k8s/vault.yml
+  kubectl apply -f k8s/external-secrets.yml
+  ```
+- **Verify Deployments**
+  ```sh
+  # Check namespaces
+  kubectl get ns
+
+  # Check pods
+  kubectl get pods -n student-api
+
+  # Check deployments
+  kubectl get deployments -n student-api
+
+  # Check services
+  kubectl get svc -n student-api
+  ```
+- **Debugging**
+  ```sh
+  # Describe pod for events/logs
+  kubectl describe pod <pod-name> -n student-api
+
+  # View container logs
+  kubectl logs -f <pod-name> -n student-api
+
+  # Exec into a running pod
+  kubectl exec -it <pod-name> -n student-api -- /bin/sh
+  ```
+- **Port Forward (if no LoadBalancer)**
+  ```sh
+  kubectl port-forward svc/student-api-service 8080:80 -n student-api
+  ```
+  - Now access API at: **http://localhost:8080/api/v1/students**
+
+- **Testing in Kubernetes**
+  ```sh
+  # Healthcheck endpoint
+  curl http://<node-ip>:<nodePort>/healthcheck
+  ```
+  - Expected response:
+  ```json
+  {"status": "ok"}
+  ```
+
+- **Cleanup**
+  ```sh
+  kubectl delete -f k8s/application.yml
+  kubectl delete -f k8s/database.yml
+  kubectl delete -f k8s/vault.yml
+  kubectl delete -f k8s/external-secrets.yml
+  ```
+  
 **At the end: "Our app is cloud-ready, secure, and scalable on Kubernetes".**
