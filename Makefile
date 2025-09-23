@@ -1,4 +1,4 @@
-# Makefile for Flask REST API project
+# Makefile for Flask REST API 
 
 # Local Variables
 PYTHON = python
@@ -10,38 +10,47 @@ REQ = requirements.txt
 # Docker Variables
 DOCKER_IMAGE = flask-app
 DOCKER_IMAGE_TAG ?= 1.0.0
-DOCKER_CONTAINER = flask-container
+DOCKER_HUB_USERNAME = akhilthyadi
 
-# Docker Compose Variables
-DOCKER_COMPOSE = docker compose
-API_CONTAINER = flask-container
-DB_CONTAINER = postgres-container
+# Docker Compose Services
+FLASK_APP_1 = flask-app-1
+FLASK_APP_2 = flask-app-2
+DB_SERVICE = postgres
+NGINX_SERVICE = nginx
 
 # Default Goal
 .DEFAULT_GOAL := help
 
+# Help
 help:
 	@echo "Available commands:"
-	@echo "make install        Install dependencies from requirements.txt"
-	@echo "make freeze         Freeze dependencies to requirements.txt"
-	@echo "make lint           Run linting on Python code"
-	@echo "make run            Run Flask app locally"
-	@echo "make test           Run unit tests with pytest"
-	@echo "make clean          Remove Python cache and pytest cache"
-	@echo "make docker-build   Build the Docker image"
-	@echo "make docker-run     Run the Docker container"
-	@echo "make docker-stop    Stop and remove the Docker container"
-	@echo "make docker-logs    View logs of the Docker container"
-	@echo "make docker-clean   Remove the Docker image"
-	@echo "make docker-push    Push Docker image to Docker Hub"
-	@echo "make db             Start only the Postgres DB service"
-	@echo "make migrate        Run DB migrations (upgrade schema)"
-	@echo "make seed           Seed dummy data into DB"
-	@echo "make compose-build  Build the API Docker image via Compose"
-	@echo "make compose-up     Start all services (DB + API)"
-	@echo "make compose-down   Stop all services and remove volumes"
+	@echo "  Local:"
+	@echo "    make install        Install dependencies from requirements.txt"
+	@echo "    make freeze         Freeze dependencies to requirements.txt"
+	@echo "    make lint           Run linting on Python code"
+	@echo "    make run            Run Flask app locally"
+	@echo "    make test           Run unit tests with pytest"
+	@echo "    make clean          Remove Python cache and pytest cache"
+	@echo ""
+	@echo "  Docker (single container):"
+	@echo "    make docker-build   Build single Flask Docker image"
+	@echo "    make docker-run     Run single Flask Docker container"
+	@echo "    make docker-stop    Stop and remove single container"
+	@echo "    make docker-logs    View logs of single container"
+	@echo "    make docker-clean   Remove Docker image"
+	@echo "    make docker-push    Push Docker image to Docker Hub"
+	@echo ""
+	@echo "  Docker Compose (multi-service):"
+	@echo "    make compose-build  Build all Docker Compose services"
+	@echo "    make compose-up     Start all services (DB + API + Nginx)"
+	@echo "    make compose-down   Stop all services and remove volumes"
+	@echo "    make compose-logs   View logs of all services"
+	@echo "    make db             Start only the Postgres DB service"
+	@echo "    make migrate        Run DB migrations on $(FLASK_APP_1)"
+	@echo "    make seed           Seed dummy data into DB via $(FLASK_APP_1)"
 
 # Local commands
+
 install:
 	$(PIP) install -r $(REQ)
 
@@ -55,25 +64,27 @@ run:
 	FLASK_APP=$(FLASK_APP) flask run --host=0.0.0.0 --port=5000
 
 test:
-	$(PYTEST) -v 
+	$(PYTEST) -v
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	rm -rf .pytest_cache
 
+
 # Docker commands
+
 docker-build:
-	docker build -t $(DOCKER_IMAGE):$(DOCKER_IMAGE_TAG) .
+	docker build -t $(DOCKER_IMAGE):$(DOCKER_IMAGE_TAG) -f app/Dockerfile ./app
 
 docker-run:
-	docker run -d -p 5000:5000 --name $(DOCKER_CONTAINER) $(DOCKER_IMAGE):$(DOCKER_IMAGE_TAG)
+	docker run -d -p 5000:5000 --name $(DOCKER_IMAGE) $(DOCKER_IMAGE):$(DOCKER_IMAGE_TAG)
 
 docker-stop:
-	docker stop $(DOCKER_CONTAINER) || true
-	docker rm $(DOCKER_CONTAINER) || true
+	docker stop $(DOCKER_IMAGE) || true
+	docker rm $(DOCKER_IMAGE) || true
 
 docker-logs:
-	docker logs -f $(DOCKER_CONTAINER)
+	docker logs -f $(DOCKER_IMAGE)
 
 docker-clean:
 	docker rmi $(DOCKER_IMAGE):$(DOCKER_IMAGE_TAG) || true
@@ -82,23 +93,31 @@ docker-push:
 	docker tag $(DOCKER_IMAGE):$(DOCKER_IMAGE_TAG) $(DOCKER_HUB_USERNAME)/$(DOCKER_IMAGE):$(DOCKER_IMAGE_TAG)
 	docker push $(DOCKER_HUB_USERNAME)/$(DOCKER_IMAGE):$(DOCKER_IMAGE_TAG)
 
-# Docker Compose commands
-db:
-	$(DOCKER_COMPOSE) up -d $(DB_CONTAINER)
 
-migrate:
-	docker exec -it $(API_CONTAINER) flask db upgrade
-
-seed:
-	docker exec -it $(API_CONTAINER) python seed.py
+# Docker Compose commands (multi-service)
 
 compose-build:
-	$(DOCKER_COMPOSE) build flask-backend
+	docker compose build
 
 compose-up:
-	$(DOCKER_COMPOSE) up -d
+	docker compose up -d
 
 compose-down:
-	$(DOCKER_COMPOSE) down -v
+	docker compose down -v
 
-.PHONY: help install freeze lint run test clean docker-build docker-run docker-stop docker-logs docker-clean docker-push db migrate seed compose-build compose-up compose-down
+compose-logs:
+	docker compose logs -f
+
+db:
+	docker compose up -d $(DB_SERVICE)
+
+migrate:
+	docker compose exec $(FLASK_APP_1) flask db upgrade
+
+seed:
+	docker compose exec -w /app $(FLASK_APP_1) python seed.py
+
+# Phony targets
+.PHONY: help install freeze lint run test clean \
+        docker-build docker-run docker-stop docker-logs docker-clean docker-push \
+        compose-build compose-up compose-down compose-logs db migrate seed
