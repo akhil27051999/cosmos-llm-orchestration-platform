@@ -30,7 +30,7 @@ services:
       - ./:/app
 
   postgres:
-    image: postgres:13
+    image: postgres:15
     container_name: postgres-container
     restart: always
     env_file:
