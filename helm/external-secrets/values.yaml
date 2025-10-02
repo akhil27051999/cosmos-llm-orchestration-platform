@@ -1,0 +1,29 @@
+namespaces:
+  eso: external-secrets
+  app: student-api
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/external-secrets/external-secrets
+  tag: v0.9.9
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  name: external-secrets
+
+vault:
+  secretName: vault-token
+  token: "root"
+  server: "http://vault.vault.svc.cluster.local:8200"
+  path: "secret"
+  version: "v2"
+
+database:
+  secretName: postgres-secret
+  vaultKey: studentdb
+  usernameKey: POSTGRES_USER
+  passwordKey: POSTGRES_PASSWORD
+
+nodeSelector:
+  type: dependent_services
