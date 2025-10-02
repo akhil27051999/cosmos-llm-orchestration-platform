@@ -1,0 +1,32 @@
+namespace: student-api
+
+replicaCount: 1
+
+image:
+  repository: postgres
+  tag: "15"
+  pullPolicy: IfNotPresent
+
+service:
+  name: postgres
+  type: ClusterIP
+  port: 5432
+  targetPort: 5432
+
+config:
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "studentdb"
+
+database:
+  secretName: postgres-secret
+  usernameKey: POSTGRES_USER
+  passwordKey: POSTGRES_PASSWORD
+
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: ""   # set if you want a specific storageClass
+
+nodeSelector:
+  type: database
