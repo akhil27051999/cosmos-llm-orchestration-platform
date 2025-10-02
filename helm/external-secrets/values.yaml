@@ -28,6 +28,4 @@ database:
 nodeSelector:
   type: dependent_services
 
-operator:
-  args:
-    - --disable-pushsecret
+operator: {}
