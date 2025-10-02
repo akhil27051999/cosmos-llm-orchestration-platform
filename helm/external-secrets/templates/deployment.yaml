@@ -20,3 +20,7 @@ spec:
         - name: external-secrets-operator
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            {{- range .Values.operator.args }}
+            - {{ . }}
+            {{- end }}
