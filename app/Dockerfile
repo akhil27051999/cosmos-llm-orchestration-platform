@@ -32,4 +32,4 @@ ENV FLASK_APP=app/wsgi.py
 EXPOSE 5000
 
 # Start Gunicorn server
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app.wsgi:app", "--workers", "2"]
+CMD ["gunicorn", "app.wsgi:app"]
