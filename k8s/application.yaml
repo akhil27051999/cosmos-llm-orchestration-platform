@@ -1,14 +1,10 @@
-# ----------------------
 # Namespace for application
-# ----------------------
 apiVersion: v1
 kind: Namespace
 metadata:
   name: student-api
 ---
-# ----------------------
 # ConfigMap for Flask API
-# ----------------------
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -19,9 +15,7 @@ data:
   POSTGRES_PORT: "5432"
   POSTGRES_DB: "studentdb"
 ---
-# ----------------------
 # Deployment for Flask REST API
-# ----------------------
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -113,9 +107,7 @@ spec:
                   name: flask-config
                   key: POSTGRES_DB
 ---
-# ----------------------
 # Service to expose Flask API
-# ----------------------
 apiVersion: v1
 kind: Service
 metadata:
