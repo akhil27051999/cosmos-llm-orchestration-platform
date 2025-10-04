@@ -1,8 +1,11 @@
+# Namespace for Vault
 apiVersion: v1
 kind: Namespace
 metadata:
   name: vault
 ---
+
+# Deployment for Vault
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -40,6 +43,8 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
 ---
+
+# Service for Vault
 apiVersion: v1
 kind: Service
 metadata:
