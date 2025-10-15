@@ -1,11 +1,8 @@
-# Namespace for Vault
 apiVersion: v1
 kind: Namespace
 metadata:
   name: vault
 ---
-
-# PersistentVolumeClaim for Vault storage
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -19,8 +16,6 @@ spec:
       storage: 0.5Gi
   storageClassName: standard
 ---
-
-# ConfigMap for Vault configuration
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -30,29 +25,22 @@ data:
   vault.hcl: |
     ui = true
     disable_mlock = true
-    
     storage "file" {
       path = "/vault/data"
     }
-    
     listener "tcp" {
       address = "0.0.0.0:8200"
       tls_disable = 1
     }
-    
     api_addr = "http://vault-service.vault.svc.cluster.local:8200"
     cluster_addr = "https://vault-service.vault.svc.cluster.local:8201"
 ---
-
-# ServiceAccount for Vault
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: vault
   namespace: vault
 ---
-
-# Service for Vault
 apiVersion: v1
 kind: Service
 metadata:
@@ -70,8 +58,6 @@ spec:
       protocol: TCP
   type: ClusterIP
 ---
-
-# Deployment for Vault
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -95,13 +81,12 @@ spec:
       initContainers:
       - name: init-permissions
         image: busybox
-        command: ['sh', '-c', 'mkdir -p /vault/data && chown 100:1000 /vault/data && chmod 755 /vault/data']
+        command: ['sh', '-c', 'mkdir -p /vault/data && chown -R 100:1000 /vault/data && chmod -R 755 /vault/data']
         volumeMounts:
         - name: vault-data
           mountPath: /vault/data
         securityContext:
           runAsUser: 0
-          runAsGroup: 0
       containers:
       - name: vault
         image: hashicorp/vault:1.15.0
@@ -109,8 +94,6 @@ spec:
         args:
         - -c
         - |
-          # Set ownership on any existing files
-          chown -R 100:1000 /vault/data 2>/dev/null || true
           cp /vault/config/vault.hcl /tmp/vault.hcl
           exec vault server -config=/tmp/vault.hcl
         ports:
@@ -123,6 +106,18 @@ spec:
           value: "http://0.0.0.0:8200"
         - name: SKIP_SETCAP
           value: "true"
+        readinessProbe:
+          httpGet:
+            path: /v1/sys/health
+            port: 8200
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /v1/sys/health
+            port: 8200
+          initialDelaySeconds: 60
+          periodSeconds: 30
         volumeMounts:
         - name: vault-config
           mountPath: /vault/config
