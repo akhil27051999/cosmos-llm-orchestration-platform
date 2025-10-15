@@ -5,12 +5,80 @@ metadata:
   name: vault
 ---
 
+# PersistentVolumeClaim for Vault storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vault-pvc
+  namespace: vault
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 0.5Gi
+  storageClassName: standard
+---
+
+# ConfigMap for Vault configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-config
+  namespace: vault
+data:
+  vault.hcl: |
+    ui = true
+    disable_mlock = true
+    
+    storage "file" {
+      path = "/vault/data"
+    }
+    
+    listener "tcp" {
+      address = "0.0.0.0:8200"
+      tls_disable = 1
+    }
+    
+    api_addr = "http://vault-service.vault.svc.cluster.local:8200"
+    cluster_addr = "https://vault-service.vault.svc.cluster.local:8201"
+---
+
+# ServiceAccount for Vault
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault
+  namespace: vault
+---
+
+# Service for Vault
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault-service
+  namespace: vault
+  labels:
+    app: vault
+spec:
+  selector:
+    app: vault
+  ports:
+    - name: http
+      port: 8200
+      targetPort: 8200
+      protocol: TCP
+  type: ClusterIP
+---
+
 # Deployment for Vault
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: vault
   namespace: vault
+  labels:
+    app: vault
 spec:
   replicas: 1
   selector:
@@ -22,39 +90,53 @@ spec:
         app: vault
     spec:
       nodeSelector:
-        type: dependent_services
+        kubernetes.io/hostname: minikube-m03
+      serviceAccountName: vault
+      initContainers:
+      - name: init-permissions
+        image: busybox
+        command: ['sh', '-c', 'mkdir -p /vault/data && chown 100:1000 /vault/data && chmod 755 /vault/data']
+        volumeMounts:
+        - name: vault-data
+          mountPath: /vault/data
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
       containers:
-        - name: vault
-          image: hashicorp/vault:1.17.3
-          args:
-            - "server"
-            - "-dev"
-          ports:
-            - containerPort: 8200
-          env:
-            - name: VAULT_DEV_ROOT_TOKEN_ID
-              value: "root"
-            - name: VAULT_DEV_LISTEN_ADDRESS
-              value: "0.0.0.0:8200"
-          readinessProbe:
-            httpGet:
-              path: /v1/sys/health
-              port: 8200
-            initialDelaySeconds: 5
-            periodSeconds: 10
----
-
-# Service for Vault
-apiVersion: v1
-kind: Service
-metadata:
-  name: vault
-  namespace: vault
-spec:
-  selector:
-    app: vault
-  ports:
-    - name: http
-      port: 8200
-      targetPort: 8200
-  type: ClusterIP
+      - name: vault
+        image: hashicorp/vault:1.15.0
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          # Set ownership on any existing files
+          chown -R 100:1000 /vault/data 2>/dev/null || true
+          cp /vault/config/vault.hcl /tmp/vault.hcl
+          exec vault server -config=/tmp/vault.hcl
+        ports:
+        - containerPort: 8200
+          name: http
+        env:
+        - name: VAULT_ADDR
+          value: "http://0.0.0.0:8200"
+        - name: VAULT_API_ADDR
+          value: "http://0.0.0.0:8200"
+        - name: SKIP_SETCAP
+          value: "true"
+        volumeMounts:
+        - name: vault-config
+          mountPath: /vault/config
+          readOnly: true
+        - name: vault-data
+          mountPath: /vault/data
+        securityContext:
+          runAsUser: 100
+          runAsGroup: 1000
+      volumes:
+      - name: vault-config
+        configMap:
+          name: vault-config
+          defaultMode: 0644
+      - name: vault-data
+        persistentVolumeClaim:
+          claimName: vault-pvc
