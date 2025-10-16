@@ -3,6 +3,9 @@ kind: Service
 metadata:
   name: {{ .Values.service.name }}
   namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "vault.labels" . | nindent 4 }}
+    app: vault
 spec:
   selector:
     app: vault
@@ -10,4 +13,5 @@ spec:
     - name: http
       port: {{ .Values.service.port }}
       targetPort: {{ .Values.service.targetPort }}
+      protocol: {{ .Values.service.protocol }}
   type: {{ .Values.service.type }}

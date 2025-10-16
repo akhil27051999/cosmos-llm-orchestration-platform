@@ -1,21 +1,76 @@
+# Namespace configuration
 namespace: vault
 
-replicaCount: 1
-
+# Vault image configuration
 image:
   repository: hashicorp/vault
-  tag: "1.17.3"
+  tag: "1.15.0"
   pullPolicy: IfNotPresent
 
+# Deployment configuration
+deployment:
+  replicaCount: 1
+  labels:
+    app: vault
+  nodeSelector:
+    kubernetes.io/hostname: minikube-m03
+
+# Service configuration
 service:
-  name: vault
+  name: vault-service
   type: ClusterIP
   port: 8200
   targetPort: 8200
+  protocol: TCP
 
-vault:
-  devRootToken: "root"
-  listenAddress: "0.0.0.0:8200"
+# Storage configuration
+persistence:
+  enabled: true
+  storageClassName: "standard"
+  size: "0.5Gi"
+  accessModes:
+    - ReadWriteOnce
 
-nodeSelector:
-  type: dependent_services
+# Vault configuration
+config:
+  ui: true
+  disable_mlock: true
+  storage:
+    type: "file"
+    path: "/vault/data"
+  listener:
+    type: "tcp"
+    address: "0.0.0.0:8200"
+    tls_disable: 1
+  api_addr: "http://vault-service.vault.svc.cluster.local:8200"
+  cluster_addr: "https://vault-service.vault.svc.cluster.local:8201"
+
+# Init container configuration
+initContainer:
+  image: busybox
+  securityContext:
+    runAsUser: 0
+
+# Container security context
+securityContext:
+  runAsUser: 100
+  runAsGroup: 1000
+
+# Probes configuration
+probes:
+  readiness:
+    path: /v1/sys/health
+    port: 8200
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  liveness:
+    path: /v1/sys/health
+    port: 8200
+    initialDelaySeconds: 60
+    periodSeconds: 30
+
+# Environment variables
+env:
+  VAULT_ADDR: "http://0.0.0.0:8200"
+  VAULT_API_ADDR: "http://0.0.0.0:8200"
+  SKIP_SETCAP: "true"

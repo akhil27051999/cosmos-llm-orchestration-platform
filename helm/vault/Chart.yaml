@@ -1,6 +1,6 @@
 apiVersion: v2
 name: vault
-description: Simple dev-mode Vault Helm chart (not for production)
+description: HashiCorp Vault for secret management
 type: application
 version: 0.1.0
-appVersion: "1.17.3"
+appVersion: "1.15.0"

@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "vault.labels" . | nindent 4 }}
+data:
+  vault.hcl: |
+    ui = {{ .Values.config.ui }}
+    disable_mlock = {{ .Values.config.disable_mlock }}
+    storage "{{ .Values.config.storage.type }}" {
+      path = "{{ .Values.config.storage.path }}"
+    }
+    listener "{{ .Values.config.listener.type }}" {
+      address = "{{ .Values.config.listener.address }}"
+      tls_disable = {{ .Values.config.listener.tls_disable }}
+    }
+    api_addr = "{{ .Values.config.api_addr }}"
+    cluster_addr = "{{ .Values.config.cluster_addr }}"

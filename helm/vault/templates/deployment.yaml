@@ -1,37 +1,78 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: vault
+  name: {{ .Values.namespace }}
   namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "vault.labels" . | nindent 4 }}
+    {{- toYaml .Values.deployment.labels | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.deployment.replicaCount }}
   selector:
     matchLabels:
-      app: vault
+      {{- toYaml .Values.deployment.labels | nindent 6 }}
   template:
     metadata:
       labels:
-        app: vault
+        {{- toYaml .Values.deployment.labels | nindent 8 }}
     spec:
+      {{- if .Values.deployment.nodeSelector }}
       nodeSelector:
-{{ toYaml .Values.nodeSelector | indent 8 }}
+        {{- toYaml .Values.deployment.nodeSelector | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "vault.serviceAccountName" . }}
+      initContainers:
+      - name: init-permissions
+        image: {{ .Values.initContainer.image }}
+        command: ['sh', '-c', 'mkdir -p /vault/data && chown -R 100:1000 /vault/data && chmod -R 755 /vault/data']
+        volumeMounts:
+        - name: vault-data
+          mountPath: /vault/data
+        securityContext:
+          {{- toYaml .Values.initContainer.securityContext | nindent 12 }}
       containers:
-        - name: vault
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args:
-            - "server"
-            - "-dev"
-          ports:
-            - containerPort: {{ .Values.service.targetPort }}
-          env:
-            - name: VAULT_DEV_ROOT_TOKEN_ID
-              value: {{ .Values.vault.devRootToken | quote }}
-            - name: VAULT_DEV_LISTEN_ADDRESS
-              value: {{ .Values.vault.listenAddress | quote }}
-          readinessProbe:
-            httpGet:
-              path: /v1/sys/health
-              port: {{ .Values.service.targetPort }}
-            initialDelaySeconds: 5
-            periodSeconds: 10
+      - name: {{ .Values.namespace }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          cp /vault/config/vault.hcl /tmp/vault.hcl
+          exec vault server -config=/tmp/vault.hcl
+        ports:
+        - containerPort: {{ .Values.service.targetPort }}
+          name: http
+        env:
+        {{- range $name, $value := .Values.env }}
+        - name: {{ $name }}
+          value: {{ $value | quote }}
+        {{- end }}
+        readinessProbe:
+          httpGet:
+            path: {{ .Values.probes.readiness.path }}
+            port: {{ .Values.probes.readiness.port }}
+          initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+        livenessProbe:
+          httpGet:
+            path: {{ .Values.probes.liveness.path }}
+            port: {{ .Values.probes.liveness.port }}
+          initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+          periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+        volumeMounts:
+        - name: vault-config
+          mountPath: /vault/config
+          readOnly: true
+        - name: vault-data
+          mountPath: /vault/data
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 12 }}
+      volumes:
+      - name: vault-config
+        configMap:
+          name: vault-config
+          defaultMode: 0644
+      - name: vault-data
+        persistentVolumeClaim:
+          claimName: vault-pvc
