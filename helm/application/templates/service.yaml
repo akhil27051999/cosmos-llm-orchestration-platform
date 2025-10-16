@@ -3,9 +3,11 @@ kind: Service
 metadata:
   name: {{ .Values.service.name }}
   namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "flask-api.labels" . | nindent 4 }}
 spec:
   selector:
-    app: flask-api
+    {{- toYaml .Values.deployment.labels | nindent 4 }}
   ports:
     - protocol: TCP
       port: {{ .Values.service.port }}
