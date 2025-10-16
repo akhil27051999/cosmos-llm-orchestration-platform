@@ -1,26 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: external-secrets-operator
-  namespace: {{ .Values.namespaces.eso }}
+  name: {{ .Values.operator.name }}
+  namespace: {{ .Values.namespaces.operator }}
+  labels:
+    {{- include "external-secrets.labels" . | nindent 4 }}
+    {{- toYaml .Values.operator.labels | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.operator.replicaCount }}
   selector:
     matchLabels:
-      app: external-secrets
+      {{- toYaml .Values.operator.labels | nindent 6 }}
   template:
     metadata:
       labels:
-        app: external-secrets
+        {{- toYaml .Values.operator.labels | nindent 8 }}
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
-      nodeSelector:
-        type: {{ .Values.nodeSelector.type }}
       containers:
-        - name: external-secrets-operator
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args:
-            {{- range .Values.operator.args }}
-            - {{ . }}
-            {{- end }}
+        - name: {{ .Values.operator.name }}
+          image: {{ .Values.operator.image }}
+          imagePullPolicy: {{ .Values.operator.imagePullPolicy }}

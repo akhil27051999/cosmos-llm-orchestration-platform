@@ -1,31 +1,56 @@
+# Namespace configuration
 namespaces:
-  eso: external-secrets
-  app: student-api
+  operator: external-secrets
+  application: student-api
 
-replicaCount: 1
+# Operator configuration
+operator:
+  name: external-secrets-operator
+  image: ghcr.io/external-secrets/external-secrets:v0.9.9
+  imagePullPolicy: IfNotPresent
+  replicaCount: 1
+  labels:
+    app: external-secrets
 
-image:
-  repository: ghcr.io/external-secrets/external-secrets
-  tag: v0.9.9
-  pullPolicy: IfNotPresent
-
+# Service Account configuration
 serviceAccount:
   name: external-secrets
 
+# RBAC configuration
+rbac:
+  clusterRole:
+    name: external-secrets-cluster-role
+  clusterRoleBinding:
+    name: external-secrets-cluster-role-binding
+
+# Vault configuration
 vault:
-  secretName: vault-token
-  token: "root"
-  server: "http://vault.vault.svc.cluster.local:8200"
+  server: "http://vault-service.vault.svc.cluster.local:8200"
   path: "secret"
   version: "v2"
+  # This will be set during deployment
+  token: ""
 
-database:
-  secretName: postgres-secret
-  vaultKey: studentdb
-  usernameKey: POSTGRES_USER
-  passwordKey: POSTGRES_PASSWORD
+# Token secret configuration
+tokenSecret:
+  name: vault-token
+  key: token
 
-nodeSelector:
-  type: dependent_services
+# ClusterSecretStore configuration
+clusterSecretStore:
+  name: vault-backend
 
-operator: {}
+# ExternalSecret configuration
+externalSecrets:
+  - name: studentdb-secrets
+    namespace: student-api
+    refreshInterval: "1h"
+    targetSecret: postgres-secret
+    creationPolicy: Owner
+    data:
+      - secretKey: "POSTGRES_USER"
+        vaultKey: "studentdb"
+        vaultProperty: "POSTGRES_USER"
+      - secretKey: "POSTGRES_PASSWORD"
+        vaultKey: "studentdb"
+        vaultProperty: "POSTGRES_PASSWORD"
