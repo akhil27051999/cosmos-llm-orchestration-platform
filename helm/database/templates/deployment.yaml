@@ -1,56 +1,63 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: postgres
+  name: {{ .Values.deployment.name }}
   namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "postgresql.labels" . | nindent 4 }}
+    {{- toYaml .Values.deployment.labels | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.deployment.replicaCount }}
   selector:
     matchLabels:
-      app: postgres
+      {{- toYaml .Values.deployment.labels | nindent 6 }}
   template:
     metadata:
       labels:
-        app: postgres
+        {{- toYaml .Values.deployment.labels | nindent 8 }}
     spec:
+      {{- if .Values.deployment.nodeSelector }}
       nodeSelector:
-{{ toYaml .Values.nodeSelector | indent 8 }}
+        {{- toYaml .Values.deployment.nodeSelector | nindent 8 }}
+      {{- end }}
       containers:
-        - name: postgres
+        - name: {{ .Values.deployment.name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.service.targetPort }}
           env:
+            # Secrets for username & password
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.database.secretName }}
-                  key: {{ .Values.database.usernameKey }}
+                  name: {{ .Values.secret.name }}
+                  key: {{ .Values.secret.keys.POSTGRES_USER }}
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.database.secretName }}
-                  key: {{ .Values.database.passwordKey }}
+                  name: {{ .Values.secret.name }}
+                  key: {{ .Values.secret.keys.POSTGRES_PASSWORD }}
+            # ConfigMap for DB name, host, port
             - name: POSTGRES_DB
               valueFrom:
                 configMapKeyRef:
-                  name: postgres-config
-                  key: POSTGRES_DB
+                  name: {{ .Values.configMap.name }}
+                  key: {{ .Values.configMap.keys.POSTGRES_DB }}
             - name: POSTGRES_HOST
               valueFrom:
                 configMapKeyRef:
-                  name: postgres-config
-                  key: POSTGRES_HOST
+                  name: {{ .Values.configMap.name }}
+                  key: {{ .Values.configMap.keys.POSTGRES_HOST }}
             - name: POSTGRES_PORT
               valueFrom:
                 configMapKeyRef:
-                  name: postgres-config
-                  key: POSTGRES_PORT
+                  name: {{ .Values.configMap.name }}
+                  key: {{ .Values.configMap.keys.POSTGRES_PORT }}
           volumeMounts:
-            - name: postgres-storage
-              mountPath: /var/lib/postgresql/data
+            - name: {{ .Values.volume.name }}
+              mountPath: {{ .Values.volume.mountPath }}
       volumes:
-        - name: postgres-storage
+        - name: {{ .Values.volume.name }}
           persistentVolumeClaim:
-            claimName: postgres-pvc
+            claimName: {{ .Values.volume.pvc }}

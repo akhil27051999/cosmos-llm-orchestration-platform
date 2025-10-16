@@ -1,32 +1,59 @@
+# Namespace configuration
 namespace: student-api
 
-replicaCount: 1
-
+# PostgreSQL image configuration
 image:
   repository: postgres
   tag: "15"
   pullPolicy: IfNotPresent
 
+# Deployment configuration
+deployment:
+  name: postgres
+  replicaCount: 1
+  labels:
+    app: postgres
+  nodeSelector:
+    type: database
+
+# Service configuration
 service:
   name: postgres
   type: ClusterIP
   port: 5432
   targetPort: 5432
 
+# Storage configuration
+persistence:
+  enabled: true
+  storageClassName: ""
+  size: "1Gi"
+  accessModes:
+    - ReadWriteOnce
+
+# Volume configuration
+volume:
+  name: postgres-storage
+  pvc: postgres-pvc
+  mountPath: "/var/lib/postgresql/data"
+
+# Configuration
 config:
   POSTGRES_HOST: "postgres"
   POSTGRES_PORT: "5432"
   POSTGRES_DB: "studentdb"
 
-database:
-  secretName: postgres-secret
-  usernameKey: POSTGRES_USER
-  passwordKey: POSTGRES_PASSWORD
+# ConfigMap reference
+configMap:
+  name: postgres-config
+  keys:
+    POSTGRES_DB: "POSTGRES_DB"
+    POSTGRES_HOST: "POSTGRES_HOST"
+    POSTGRES_PORT: "POSTGRES_PORT"
 
-persistence:
-  enabled: true
-  size: 1Gi
-  storageClass: ""   # set if you want a specific storageClass
-
-nodeSelector:
-  type: database
+# Secret reference (from External Secrets)
+secret:
+  name: postgres-secret
+  keys:
+    POSTGRES_USER: "POSTGRES_USER"
+    POSTGRES_PASSWORD: "POSTGRES_PASSWORD"
