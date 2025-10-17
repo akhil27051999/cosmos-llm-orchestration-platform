@@ -21,3 +21,7 @@ spec:
         - name: {{ .Values.operator.name }}
           image: {{ .Values.operator.image }}
           imagePullPolicy: {{ .Values.operator.imagePullPolicy }}
+          {{- if .Values.operator.resources }}
+          resources:
+            {{- toYaml .Values.operator.resources | nindent 12 }}
+          {{- end }}

@@ -2,6 +2,7 @@
 namespaces:
   operator: external-secrets
   application: student-api
+  observability: observability
 
 # Operator configuration
 operator:
@@ -11,6 +12,14 @@ operator:
   replicaCount: 1
   labels:
     app: external-secrets
+  # Configurable resources - can be overridden or set to null to disable
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "100m"
 
 # Service Account configuration
 serviceAccount:
@@ -37,8 +46,9 @@ tokenSecret:
   key: token
 
 # ClusterSecretStore configuration
-clusterSecretStore:
-  name: vault-backend
+clusterSecretStores:
+  vault-backend: {}
+  vault-backend-monitoring: {}
 
 # ExternalSecret configuration
 externalSecrets:
@@ -47,6 +57,7 @@ externalSecrets:
     refreshInterval: "1h"
     targetSecret: postgres-secret
     creationPolicy: Owner
+    secretStore: vault-backend
     data:
       - secretKey: "POSTGRES_USER"
         vaultKey: "studentdb"
@@ -54,3 +65,32 @@ externalSecrets:
       - secretKey: "POSTGRES_PASSWORD"
         vaultKey: "studentdb"
         vaultProperty: "POSTGRES_PASSWORD"
+  
+  - name: postgres-exporter-secret
+    namespace: observability
+    refreshInterval: "1h"
+    targetSecret: postgres-exporter-secret
+    secretStore: vault-backend-monitoring
+    data:
+      - secretKey: POSTGRES_PASSWORD
+        vaultKey: postgres-exporter
+        vaultProperty: password
+      - secretKey: POSTGRES_USER
+        vaultKey: postgres-exporter
+        vaultProperty: username
+      - secretKey: DATA_SOURCE_URI
+        vaultKey: postgres-exporter
+        vaultProperty: connection-uri
+
+  - name: grafana-secret
+    namespace: observability
+    refreshInterval: "1h"
+    targetSecret: grafana-secret
+    secretStore: vault-backend-monitoring
+    data:
+      - secretKey: admin-password
+        vaultKey: grafana
+        vaultProperty: admin-password
+      - secretKey: admin-user
+        vaultKey: grafana
+        vaultProperty: admin-user
