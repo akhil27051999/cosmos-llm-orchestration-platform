@@ -1,26 +1,49 @@
-# Namespace for application
+# Namespace for application with Helm labels
 apiVersion: v1
 kind: Namespace
 metadata:
   name: student-api
+  labels:
+    app.kubernetes.io/name: student-api
+    app.kubernetes.io/instance: student-api
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: student-api
+    meta.helm.sh/release-namespace: student-api
 ---
-# ConfigMap for Flask API
+# ConfigMap for Flask API with Helm labels
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: flask-config
   namespace: student-api
+  labels:
+    app.kubernetes.io/name: student-api
+    app.kubernetes.io/instance: student-api
+    app.kubernetes.io/component: config
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: student-api
+    meta.helm.sh/release-namespace: student-api
 data:
   POSTGRES_HOST: "postgres"
   POSTGRES_PORT: "5432"
   POSTGRES_DB: "studentdb"
 ---
-# Deployment for Flask REST API
+# Deployment for Flask REST API with Helm labels
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: flask-api
   namespace: student-api
+  labels:
+    app.kubernetes.io/name: student-api
+    app.kubernetes.io/instance: student-api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: student-api
+    meta.helm.sh/release-namespace: student-api
 spec:
   replicas: 2
   selector:
@@ -30,6 +53,8 @@ spec:
     metadata:
       labels:
         app: flask-api
+        app.kubernetes.io/name: student-api
+        app.kubernetes.io/instance: student-api
     spec:
       nodeSelector:
         type: application
@@ -107,12 +132,20 @@ spec:
                   name: flask-config
                   key: POSTGRES_DB
 ---
-# Service to expose Flask API
+# Service to expose Flask API with Helm labels
 apiVersion: v1
 kind: Service
 metadata:
   name: flask-api-service
   namespace: student-api
+  labels:
+    app.kubernetes.io/name: student-api
+    app.kubernetes.io/instance: student-api
+    app.kubernetes.io/component: service
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: student-api
+    meta.helm.sh/release-namespace: student-api
 spec:
   selector:
     app: flask-api
