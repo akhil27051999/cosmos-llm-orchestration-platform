@@ -2,10 +2,14 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ .Values.configMap.name }}
-  namespace: {{ .Values.namespace }}
+  namespace: {{ .Values.global.releaseNamespace }}
   labels:
-    {{- include "postgresql.labels" . | nindent 4 }}
+    {{- include "postgresql.databaseLabels" . | nindent 4 }}
+    app.kubernetes.io/component: database-config
+  annotations:
+    meta.helm.sh/release-name: {{ .Release.Name }}
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
 data:
-  {{ .Values.configMap.keys.POSTGRES_HOST }}: {{ .Values.config.POSTGRES_HOST | quote }}
-  {{ .Values.configMap.keys.POSTGRES_PORT }}: {{ .Values.config.POSTGRES_PORT | quote }}
-  {{ .Values.configMap.keys.POSTGRES_DB }}: {{ .Values.config.POSTGRES_DB | quote }}
+  POSTGRES_HOST: {{ .Values.config.host | quote }}
+  POSTGRES_PORT: {{ .Values.config.port | quote }}
+  POSTGRES_DB: {{ .Values.config.name | quote }}

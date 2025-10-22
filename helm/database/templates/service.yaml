@@ -1,15 +1,19 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ .Values.service.name }}
-  namespace: {{ .Values.namespace }}
+  name: {{ .Values.database.service.name }}
+  namespace: {{ .Values.global.releaseNamespace }}
   labels:
-    {{- include "postgresql.labels" . | nindent 4 }}
+    {{- include "postgresql.databaseLabels" . | nindent 4 }}
+    app.kubernetes.io/component: database-service
+  annotations:
+    meta.helm.sh/release-name: {{ .Release.Name }}
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
 spec:
   selector:
-    {{- toYaml .Values.deployment.labels | nindent 4 }}
+    app: {{ .Values.database.name }}
   ports:
     - protocol: TCP
-      port: {{ .Values.service.port }}
-      targetPort: {{ .Values.service.targetPort }}
-  type: {{ .Values.service.type }}
+      port: {{ .Values.database.service.port }}
+      targetPort: {{ .Values.database.service.targetPort }}
+  type: {{ .Values.database.service.type }}

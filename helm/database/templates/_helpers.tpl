@@ -47,3 +47,11 @@ Selector labels
 app.kubernetes.io/name: {{ include "postgresql.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+Database specific labels
+*/}}
+{{- define "postgresql.databaseLabels" -}}
+{{- include "postgresql.labels" . }}
+app.kubernetes.io/component: database
+{{- end }}
