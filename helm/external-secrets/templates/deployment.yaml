@@ -5,23 +5,33 @@ metadata:
   namespace: {{ .Values.namespaces.operator }}
   labels:
     {{- include "external-secrets.labels" . | nindent 4 }}
-    {{- toYaml .Values.operator.labels | nindent 4 }}
+    app.kubernetes.io/component: operator
+  annotations:
+    meta.helm.sh/release-name: {{ .Release.Name }}
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
 spec:
   replicas: {{ .Values.operator.replicaCount }}
   selector:
     matchLabels:
-      {{- toYaml .Values.operator.labels | nindent 6 }}
+      app: external-secrets
   template:
     metadata:
       labels:
-        {{- toYaml .Values.operator.labels | nindent 8 }}
+        app: external-secrets
+        {{- include "external-secrets.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
       containers:
-        - name: {{ .Values.operator.name }}
-          image: {{ .Values.operator.image }}
+        - name: external-secrets-operator
+          image: "{{ .Values.operator.image }}:{{ .Values.operator.tag }}"
           imagePullPolicy: {{ .Values.operator.imagePullPolicy }}
-          {{- if .Values.operator.resources }}
+          env:
+            - name: VAULT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.vaultToken.secretName }}
+                  key: {{ .Values.vaultToken.secretKey }}
+          {{- with .Values.operator.resources }}
           resources:
-            {{- toYaml .Values.operator.resources | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
           {{- end }}

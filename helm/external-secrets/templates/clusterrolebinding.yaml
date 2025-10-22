@@ -4,6 +4,10 @@ metadata:
   name: {{ .Values.rbac.clusterRoleBinding.name }}
   labels:
     {{- include "external-secrets.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
+  annotations:
+    meta.helm.sh/release-name: {{ .Release.Name }}
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole

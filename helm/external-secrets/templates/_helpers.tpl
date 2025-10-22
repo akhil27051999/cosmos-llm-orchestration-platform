@@ -6,6 +6,22 @@ Expand the name of the chart.
 {{- end }}
 
 {{/*
+Create a default fully qualified app name.
+*/}}
+{{- define "external-secrets.fullname" -}}
+{{- if .Values.fullnameOverride }}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- $name := default .Chart.Name .Values.nameOverride }}
+{{- if contains $name .Release.Name }}
+{{- .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
 Create chart name and version as used by the chart label.
 */}}
 {{- define "external-secrets.chart" -}}
@@ -30,4 +46,21 @@ Selector labels
 {{- define "external-secrets.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "external-secrets.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Namespace labels
+*/}}
+{{- define "external-secrets.namespaceLabels" -}}
+app.kubernetes.io/name: {{ . }}
+app.kubernetes.io/instance: {{ $.Release.Name }}
+app.kubernetes.io/managed-by: {{ $.Release.Service }}
+{{- end }}
+
+{{/*
+Namespace annotations
+*/}}
+{{- define "external-secrets.namespaceAnnotations" -}}
+meta.helm.sh/release-name: {{ $.Release.Name }}
+meta.helm.sh/release-namespace: {{ $.Release.Namespace }}
 {{- end }}

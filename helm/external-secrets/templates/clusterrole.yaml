@@ -4,6 +4,10 @@ metadata:
   name: {{ .Values.rbac.clusterRole.name }}
   labels:
     {{- include "external-secrets.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
+  annotations:
+    meta.helm.sh/release-name: {{ .Release.Name }}
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
 rules:
   - apiGroups: [""]
     resources: ["secrets", "namespaces", "events"]
@@ -12,7 +16,7 @@ rules:
     resources: ["secretstores", "clustersecretstores", "externalsecrets", "clusterexternalsecrets", "pushsecrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["external-secrets.io"]
-    resources: ["externalsecrets/status", "clusterexternalsecrets/status"]
+    resources: ["externalsecrets/status", "clusterexternalsecrets/status", "secretstores/status", "clustersecretstores/status"]
     verbs: ["get", "list", "watch", "update", "patch"]
   - apiGroups: [""]
     resources: ["services"]
