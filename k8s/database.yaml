@@ -1,27 +1,53 @@
-
-# Namespace for database
+# Namespace for database with Helm labels and annotations
 apiVersion: v1
 kind: Namespace
 metadata:
   name: student-api
+  labels:
+    app.kubernetes.io/name: student-api
+    app.kubernetes.io/instance: student-api
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: student-api-0.1.0
+  annotations:
+    meta.helm.sh/release-name: student-api
+    meta.helm.sh/release-namespace: student-api
 ---
-# ConfigMap for database host, port, and DB name
+# ConfigMap for database host, port, and DB name with Helm labels
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: postgres-config
   namespace: student-api
+  labels:
+    app.kubernetes.io/name: student-api
+    app.kubernetes.io/instance: student-api
+    app.kubernetes.io/component: database-config
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: student-api-0.1.0
+    app.kubernetes.io/version: "15"
+  annotations:
+    meta.helm.sh/release-name: student-api
+    meta.helm.sh/release-namespace: student-api
 data:
   POSTGRES_HOST: postgres
   POSTGRES_PORT: "5432"
   POSTGRES_DB: studentdb
 ---
-# PersistentVolumeClaim for Postgres storage
+# PersistentVolumeClaim for Postgres storage with Helm labels
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: postgres-pvc
   namespace: student-api
+  labels:
+    app.kubernetes.io/name: student-api
+    app.kubernetes.io/instance: student-api
+    app.kubernetes.io/component: database-storage
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: student-api-0.1.0
+  annotations:
+    meta.helm.sh/release-name: student-api
+    meta.helm.sh/release-namespace: student-api
 spec:
   accessModes:
     - ReadWriteOnce
@@ -29,12 +55,22 @@ spec:
     requests:
       storage: 1Gi
 ---
-# Deployment for Postgres
+# Deployment for Postgres with Helm labels and annotations
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: postgres
   namespace: student-api
+  labels:
+    app.kubernetes.io/name: student-api
+    app.kubernetes.io/instance: student-api
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: student-api-0.1.0
+    app.kubernetes.io/version: "15"
+  annotations:
+    meta.helm.sh/release-name: student-api
+    meta.helm.sh/release-namespace: student-api
 spec:
   replicas: 1
   selector:
@@ -44,6 +80,9 @@ spec:
     metadata:
       labels:
         app: postgres
+        app.kubernetes.io/name: student-api
+        app.kubernetes.io/instance: student-api
+        app.kubernetes.io/component: database
     spec:
       nodeSelector:
         type: database
@@ -88,12 +127,22 @@ spec:
           persistentVolumeClaim:
             claimName: postgres-pvc
 ---
-# Service to expose Postgres
+# Service to expose Postgres with Helm labels
 apiVersion: v1
 kind: Service
 metadata:
   name: postgres
   namespace: student-api
+  labels:
+    app.kubernetes.io/name: student-api
+    app.kubernetes.io/instance: student-api
+    app.kubernetes.io/component: database-service
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: student-api-0.1.0
+    app.kubernetes.io/version: "15"
+  annotations:
+    meta.helm.sh/release-name: student-api
+    meta.helm.sh/release-namespace: student-api
 spec:
   selector:
     app: postgres
