@@ -1,52 +1,36 @@
-# Namespace configuration
-namespace: student-api
+# Global configuration
+global:
+  releaseName: student-api
+  releaseNamespace: student-api
 
-# Flask API image configuration
-image:
-  repository: akhilthyadi/flask-app
-  tag: "7.0.0"
-  pullPolicy: IfNotPresent
-
-# Deployment configuration
-deployment:
+# Application configuration
+app:
   name: flask-api
+  image:
+    repository: akhilthyadi/flask-app
+    tag: "7.0.0"
+    pullPolicy: IfNotPresent
   replicaCount: 2
-  labels:
-    app: flask-api
+  service:
+    name: flask-api-service
+    type: NodePort
+    port: 80
+    targetPort: 5000
   nodeSelector:
     type: application
 
-# Service configuration
-service:
-  name: flask-api-service
-  type: NodePort
-  port: 80
-  targetPort: 5000
+# Database configuration
+database:
+  host: "postgres"
+  port: "5432"
+  name: "studentdb"
 
-# Configuration
-config:
-  POSTGRES_HOST: "postgres"
-  POSTGRES_PORT: "5432"
-  POSTGRES_DB: "studentdb"
-
-# ConfigMap reference
-configMap:
-  name: flask-config
-  keys:
-    POSTGRES_DB: "POSTGRES_DB"
-    POSTGRES_HOST: "POSTGRES_HOST"
-    POSTGRES_PORT: "POSTGRES_PORT"
-
-# Secret reference (from External Secrets)
+# Secret configuration (referencing External Secrets)
 secret:
   name: postgres-secret
-  keys:
-    POSTGRES_USER: "POSTGRES_USER"
-    POSTGRES_PASSWORD: "POSTGRES_PASSWORD"
+  userKey: POSTGRES_USER
+  passwordKey: POSTGRES_PASSWORD
 
-# Init container configuration
-initContainer:
-  name: db-migrations
-  workingDir: "/api/app"
-  env:
-    FLASK_APP: "wsgi.py"
+# ConfigMap configuration
+configMap:
+  name: flask-config

@@ -1,15 +1,19 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ .Values.service.name }}
-  namespace: {{ .Values.namespace }}
+  name: {{ .Values.app.service.name }}
+  namespace: {{ .Values.global.releaseNamespace }}
   labels:
-    {{- include "flask-api.labels" . | nindent 4 }}
+    {{- include "student-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: service
+  annotations:
+    meta.helm.sh/release-name: {{ .Release.Name }}
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
 spec:
   selector:
-    {{- toYaml .Values.deployment.labels | nindent 4 }}
+    app: {{ .Values.app.name }}
   ports:
     - protocol: TCP
-      port: {{ .Values.service.port }}
-      targetPort: {{ .Values.service.targetPort }}
-  type: {{ .Values.service.type }}
+      port: {{ .Values.app.service.port }}
+      targetPort: {{ .Values.app.service.targetPort }}
+  type: {{ .Values.app.service.type }}

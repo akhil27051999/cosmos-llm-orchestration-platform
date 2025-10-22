@@ -1,57 +1,62 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Values.deployment.name }}
-  namespace: {{ .Values.namespace }}
+  name: {{ .Values.app.name }}
+  namespace: {{ .Values.global.releaseNamespace }}
   labels:
-    {{- include "flask-api.labels" . | nindent 4 }}
-    {{- toYaml .Values.deployment.labels | nindent 4 }}
+    {{- include "student-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  annotations:
+    meta.helm.sh/release-name: {{ .Release.Name }}
+    meta.helm.sh/release-namespace: {{ .Release.Namespace }}
 spec:
-  replicas: {{ .Values.deployment.replicaCount }}
+  replicas: {{ .Values.app.replicaCount }}
   selector:
     matchLabels:
-      {{- toYaml .Values.deployment.labels | nindent 6 }}
+      app: {{ .Values.app.name }}
   template:
     metadata:
       labels:
-        {{- toYaml .Values.deployment.labels | nindent 8 }}
+        app: {{ .Values.app.name }}
+        {{- include "student-api.selectorLabels" . | nindent 8 }}
     spec:
-      {{- if .Values.deployment.nodeSelector }}
+      {{- with .Values.app.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.deployment.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       initContainers:
-        - name: {{ .Values.initContainer.name }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          workingDir: {{ .Values.initContainer.workingDir }}
+        - name: db-migrations
+          image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
+          imagePullPolicy: {{ .Values.app.image.pullPolicy }}
+          workingDir: /api/app
           env:
             - name: FLASK_APP
-              value: {{ .Values.initContainer.env.FLASK_APP | quote }}
+              value: "wsgi.py"
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secret.name }}
-                  key: {{ .Values.secret.keys.POSTGRES_USER }}
+                  key: {{ .Values.secret.userKey }}
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secret.name }}
-                  key: {{ .Values.secret.keys.POSTGRES_PASSWORD }}
+                  key: {{ .Values.secret.passwordKey }}
             - name: POSTGRES_HOST
               valueFrom:
                 configMapKeyRef:
                   name: {{ .Values.configMap.name }}
-                  key: {{ .Values.configMap.keys.POSTGRES_HOST }}
+                  key: POSTGRES_HOST
             - name: POSTGRES_PORT
               valueFrom:
                 configMapKeyRef:
                   name: {{ .Values.configMap.name }}
-                  key: {{ .Values.configMap.keys.POSTGRES_PORT }}
+                  key: POSTGRES_PORT
             - name: POSTGRES_DB
               valueFrom:
                 configMapKeyRef:
                   name: {{ .Values.configMap.name }}
-                  key: {{ .Values.configMap.keys.POSTGRES_DB }}
+                  key: POSTGRES_DB
           command:
             - sh
             - -c
@@ -63,34 +68,34 @@ spec:
               echo "Postgres is ready, running migrations..."
               flask db upgrade
       containers:
-        - name: {{ .Values.deployment.name }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+        - name: {{ .Values.app.name }}
+          image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
+          imagePullPolicy: {{ .Values.app.image.pullPolicy }}
           ports:
-            - containerPort: {{ .Values.service.targetPort }}
+            - containerPort: 5000
           env:
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secret.name }}
-                  key: {{ .Values.secret.keys.POSTGRES_USER }}
+                  key: {{ .Values.secret.userKey }}
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secret.name }}
-                  key: {{ .Values.secret.keys.POSTGRES_PASSWORD }}
+                  key: {{ .Values.secret.passwordKey }}
             - name: POSTGRES_HOST
               valueFrom:
                 configMapKeyRef:
                   name: {{ .Values.configMap.name }}
-                  key: {{ .Values.configMap.keys.POSTGRES_HOST }}
+                  key: POSTGRES_HOST
             - name: POSTGRES_PORT
               valueFrom:
                 configMapKeyRef:
                   name: {{ .Values.configMap.name }}
-                  key: {{ .Values.configMap.keys.POSTGRES_PORT }}
+                  key: POSTGRES_PORT
             - name: POSTGRES_DB
               valueFrom:
                 configMapKeyRef:
                   name: {{ .Values.configMap.name }}
-                  key: {{ .Values.configMap.keys.POSTGRES_DB }}
+                  key: POSTGRES_DB
