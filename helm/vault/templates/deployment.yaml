@@ -75,4 +75,4 @@ spec:
           defaultMode: 0644
       - name: vault-data
         persistentVolumeClaim:
-          claimName: vault-pvc
+          claimName: {{ .Values.persistence.existingClaim | default "vault-pvc" }}

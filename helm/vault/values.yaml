@@ -1,3 +1,5 @@
+# Custom values for existing PVC deployment
+
 # Namespace configuration
 namespace: vault
 
@@ -23,13 +25,11 @@ service:
   targetPort: 8200
   protocol: TCP
 
-# Storage configuration
+# Storage configuration - USE EXISTING PVC
 persistence:
   enabled: true
-  storageClassName: "standard"
-  size: "0.5Gi"
-  accessModes:
-    - ReadWriteOnce
+  existingClaim: "vault-pvc"  # Use existing PVC instead of creating new
+  # Remove storageClassName, size, and accessModes since we're using existing PVC
 
 # Vault configuration
 config:
