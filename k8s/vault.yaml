@@ -2,12 +2,28 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: vault
+  labels:
+    app.kubernetes.io/name: vault
+    app.kubernetes.io/instance: vault
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: vault
+    meta.helm.sh/release-namespace: vault
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: vault-pvc
   namespace: vault
+  labels:
+    app: vault
+    app.kubernetes.io/name: vault
+    app.kubernetes.io/instance: vault
+    app.kubernetes.io/component: storage
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: vault
+    meta.helm.sh/release-namespace: vault
 spec:
   accessModes:
     - ReadWriteOnce
@@ -21,6 +37,15 @@ kind: ConfigMap
 metadata:
   name: vault-config
   namespace: vault
+  labels:
+    app: vault
+    app.kubernetes.io/name: vault
+    app.kubernetes.io/instance: vault
+    app.kubernetes.io/component: config
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: vault
+    meta.helm.sh/release-namespace: vault
 data:
   vault.hcl: |
     ui = true
@@ -32,14 +57,23 @@ data:
       address = "0.0.0.0:8200"
       tls_disable = 1
     }
-    api_addr = "http://vault-service.vault.svc.cluster.local:8200"
-    cluster_addr = "https://vault-service.vault.svc.cluster.local:8201"
+    api_addr = "http://0.0.0.0:8200"
+    cluster_addr =  "https://0.0.0.0:8201"
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: vault
   namespace: vault
+  labels:
+    app: vault
+    app.kubernetes.io/name: vault
+    app.kubernetes.io/instance: vault
+    app.kubernetes.io/component: service-account
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: vault
+    meta.helm.sh/release-namespace: vault
 ---
 apiVersion: v1
 kind: Service
@@ -48,6 +82,13 @@ metadata:
   namespace: vault
   labels:
     app: vault
+    app.kubernetes.io/name: vault
+    app.kubernetes.io/instance: vault
+    app.kubernetes.io/component: service
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: vault
+    meta.helm.sh/release-namespace: vault
 spec:
   selector:
     app: vault
@@ -65,6 +106,13 @@ metadata:
   namespace: vault
   labels:
     app: vault
+    app.kubernetes.io/name: vault
+    app.kubernetes.io/instance: vault
+    app.kubernetes.io/component: server
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: vault
+    meta.helm.sh/release-namespace: vault
 spec:
   replicas: 1
   selector:
@@ -74,6 +122,9 @@ spec:
     metadata:
       labels:
         app: vault
+        app.kubernetes.io/name: vault
+        app.kubernetes.io/instance: vault
+        app.kubernetes.io/component: server
     spec:
       nodeSelector:
         kubernetes.io/hostname: minikube-m03
