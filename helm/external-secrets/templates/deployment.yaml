@@ -21,6 +21,10 @@ spec:
         {{- include "external-secrets.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- if .Values.operator.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.operator.nodeSelector | nindent 8 }}
+      {{- end }}
       containers:
         - name: external-secrets-operator
           image: "{{ .Values.operator.image }}:{{ .Values.operator.tag }}"
