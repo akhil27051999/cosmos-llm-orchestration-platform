@@ -70,10 +70,7 @@ jobs:
   update-helm:
     needs: build
     runs-on: self-hosted
-
-    env:
-      IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
-
+    
     steps:
       - name: Checkout Helm Charts
         uses: actions/checkout@v3
@@ -84,19 +81,21 @@ jobs:
           git config --global user.email "thyadiakhil@gmail.com"
 
       - name: Ensure main branch is up to date
-        run: git pull origin dev
+        run: git pull origin main
 
       - name: Install yq
         run: |
           sudo apt-get update -y
           sudo apt-get install -y yq
 
-      - name: Update Helm Chart with New Image Tag
+      - name: Update image tag
         run: |
           echo "Updating image tag to $IMAGE_TAG..."
-          yq e -i '.app.image.tag = strenv(IMAGE_TAG)' ./helm/application/values.yaml
+          yq w -i ./helm/application/values.yaml 'app.image.tag' "$IMAGE_TAG"
           echo "Updated Helm values.yaml:"
           cat ./helm/application/values.yaml
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
 
       - name: Commit and Push Changes
         run: |
