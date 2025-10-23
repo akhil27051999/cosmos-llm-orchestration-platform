@@ -18,6 +18,10 @@ on:
 jobs:
   build:
     runs-on: self-hosted
+
+    outputs:
+      image_tag: ${{ steps.build-image.outputs.image_tag }}
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -38,10 +42,12 @@ jobs:
           pytest -v
 
       - name: Build Docker Image
+        id: build-image
         run: |
           cd app
-          IMAGE_TAG=${GITHUB_SHA::7}  # short commit SHA
+          IMAGE_TAG=${GITHUB_SHA::7}         
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
           docker build -t flask-app:$IMAGE_TAG .
 
       - name: Login to Docker Hub
@@ -60,3 +66,40 @@ jobs:
           docker rmi flask-app:$IMAGE_TAG || true
           docker rmi ${{ secrets.DOCKER_HUB_USERNAME }}/flask-app:$IMAGE_TAG || true
           docker system prune -f || true
+
+  update-helm:
+    needs: build
+    runs-on: self-hosted
+
+    env:
+      IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+
+    steps:
+      - name: Checkout Helm Charts
+        uses: actions/checkout@v3
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "akhil27051999"
+          git config --global user.email "thyadiakhil@gmail.com"
+
+      - name: Ensure main branch is up to date
+        run: git pull origin main
+
+      - name: Install yq
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y yq
+
+      - name: Update Helm Chart with New Image Tag
+        run: |
+          echo "Updating image tag to $IMAGE_TAG..."
+          yq e -i '.app.image.tag = strenv(IMAGE_TAG)' ./helm/application/values.yaml
+          echo "Updated Helm values.yaml:"
+          cat ./helm/application/values.yaml
+
+      - name: Commit and Push Changes
+        run: |
+          git add ./helm/application/values.yaml
+          git commit -m "Update Flask App image tag to $IMAGE_TAG" || echo "No changes to commit"
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git main
