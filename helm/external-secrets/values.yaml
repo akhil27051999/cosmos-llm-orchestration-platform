@@ -17,6 +17,10 @@ operator:
   imagePullPolicy: IfNotPresent
   replicaCount: 1
   resources: {}
+  nodeSelector: 
+    kubernetes.io/hostname: minikube-m03
+  tolerations: []
+  affinity: {}
 
 # Service Account configuration
 serviceAccount:
