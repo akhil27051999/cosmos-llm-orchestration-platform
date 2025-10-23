@@ -70,7 +70,7 @@ jobs:
   update-helm:
     needs: build
     runs-on: self-hosted
-    
+
     steps:
       - name: Checkout Helm Charts
         uses: actions/checkout@v3
@@ -83,15 +83,11 @@ jobs:
       - name: Ensure main branch is up to date
         run: git pull origin main
 
-      - name: Install yq
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y yq
-
-      - name: Update image tag
+      - name: Update image tag using sed
         run: |
           echo "Updating image tag to $IMAGE_TAG..."
-          yq w -i ./helm/application/values.yaml 'app.image.tag' "$IMAGE_TAG"
+          # Using sed - universal and reliable
+          sed -i 's/^\([[:space:]]*tag:[[:space:]]*\).*/\1'"$IMAGE_TAG"'/' ./helm/application/values.yaml
           echo "Updated Helm values.yaml:"
           cat ./helm/application/values.yaml
         env:
