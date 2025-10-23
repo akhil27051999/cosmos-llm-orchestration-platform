@@ -54,6 +54,7 @@ global:
   # -- Number of old deployment ReplicaSets to retain. The rest will be garbage collected.
   revisionHistoryLimit: 3
 
+
   # Default image used by all components
   image:
     # -- If defined, a repository applied to all Argo CD deployments
@@ -123,7 +124,7 @@ global:
 
   # -- Default node selector for all components
   nodeSelector:
-    kubernetes.io/os: linux
+    kubernetes.io/hostname: minikube-m03
 
   # -- Default tolerations for all components
   tolerations: []
@@ -164,6 +165,8 @@ global:
 
   # -- Annotations for the all deployed Certificates
   certificateAnnotations: {}
+  scrape_interval: 30s
+  evaluation_interval: 30s
 
 ## Argo Configs
 configs:
