@@ -84,7 +84,7 @@ jobs:
           git config --global user.email "thyadiakhil@gmail.com"
 
       - name: Ensure main branch is up to date
-        run: git pull origin main
+        run: git pull origin dev
 
       - name: Install yq
         run: |
