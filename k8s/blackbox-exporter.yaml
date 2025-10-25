@@ -1,0 +1,193 @@
+# Namespace for observability with Helm labels
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    app.kubernetes.io/name: observability
+    app.kubernetes.io/instance: observability
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: observability
+    meta.helm.sh/release-namespace: observability
+---
+# ConfigMap for Blackbox Exporter configuration with Helm labels
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blackbox-exporter-config
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: blackbox-exporter
+    app.kubernetes.io/instance: blackbox-exporter
+    app.kubernetes.io/component: config
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+  annotations:
+    meta.helm.sh/release-name: observability
+    meta.helm.sh/release-namespace: observability
+data:
+  blackbox.yml: |
+    modules:
+      http_2xx:
+        prober: http
+        timeout: 10s
+        http:
+          valid_status_codes: [200, 301, 302, 401, 403]
+          method: GET
+          preferred_ip_protocol: "ip4"
+          follow_redirects: true
+          fail_if_ssl: false
+          fail_if_not_ssl: false
+          tls_config:
+            insecure_skip_verify: true
+      http_health_check:
+        prober: http
+        timeout: 5s
+        http:
+          method: GET
+          valid_status_codes: [200]
+          preferred_ip_protocol: "ip4"
+      https_2xx:
+        prober: http
+        timeout: 10s
+        http:
+          valid_status_codes: [200]
+          method: GET
+          preferred_ip_protocol: "ip4"
+          tls_config:
+            insecure_skip_verify: true
+      tcp_connect:
+        prober: tcp
+        timeout: 10s
+      icmp:
+        prober: icmp
+        timeout: 10s
+---
+# Deployment for Blackbox Exporter with Helm labels
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blackbox-exporter
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: blackbox-exporter
+    app.kubernetes.io/instance: blackbox-exporter
+    app.kubernetes.io/component: exporter
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+  annotations:
+    meta.helm.sh/release-name: observability
+    meta.helm.sh/release-namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: blackbox-exporter
+      app.kubernetes.io/instance: blackbox-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: blackbox-exporter
+        app.kubernetes.io/instance: blackbox-exporter
+        app.kubernetes.io/component: exporter
+        app.kubernetes.io/part-of: observability-stack
+    spec:
+      nodeSelector:
+        type: dependent_services
+      containers:
+      - name: blackbox-exporter
+        image: prom/blackbox-exporter:latest
+        ports:
+        - containerPort: 9115
+          name: http-metrics
+        args:
+        - --config.file=/etc/blackbox_exporter/blackbox.yml
+        - --log.level=debug
+        volumeMounts:
+        - name: config
+          mountPath: /etc/blackbox_exporter
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 9115
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 9115
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: blackbox-exporter-config
+---
+# Service to expose Blackbox Exporter with Helm labels
+apiVersion: v1
+kind: Service
+metadata:
+  name: blackbox-exporter
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: blackbox-exporter
+    app.kubernetes.io/instance: blackbox-exporter
+    app.kubernetes.io/component: service
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+  annotations:
+    meta.helm.sh/release-name: observability
+    meta.helm.sh/release-namespace: observability
+spec:
+  selector:
+    app.kubernetes.io/name: blackbox-exporter
+    app.kubernetes.io/instance: blackbox-exporter
+  ports:
+  - port: 9115
+    targetPort: 9115
+    protocol: TCP
+    name: http
+  type: ClusterIP
+---
+# ConfigMap for Prometheus blackbox targets with Helm labels
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-blackbox-targets
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: prometheus
+    app.kubernetes.io/component: config
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+  annotations:
+    meta.helm.sh/release-name: observability
+    meta.helm.sh/release-namespace: observability
+data:
+  blackbox-targets.yaml: |
+    - targets:
+        - http://argocd-server.argocd:80
+        - http://vault-service.vault:8200/v1/sys/health
+        - http://flask-api-service.student-api:80
+        - https://external-secrets-webhook.default:443
+        - http://grafana.observability:3000
+        - http://prometheus-kube-prometheus-prometheus.observability:9090
+        - http://loki.observability:3100/ready
+      labels:
+        group: "internal-http-services"
+        severity: "critical"
+
+    - targets:
+        - tcp://postgres.student-api:5432
+      labels:
+        group: "internal-tcp-services"
+        severity: "critical"
