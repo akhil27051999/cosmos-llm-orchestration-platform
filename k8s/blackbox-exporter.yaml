@@ -103,7 +103,7 @@ spec:
           name: http-metrics
         args:
         - --config.file=/etc/blackbox_exporter/blackbox.yml
-        - --log.level=debug
+        - --log.level=info
         volumeMounts:
         - name: config
           mountPath: /etc/blackbox_exporter
@@ -154,8 +154,34 @@ spec:
   - port: 9115
     targetPort: 9115
     protocol: TCP
-    name: http
+    name: http-metrics  # FIXED: Changed from 'http' to 'http-metrics'
   type: ClusterIP
+---
+# ServiceMonitor for Blackbox Exporter - ADDED
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: blackbox-exporter
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: blackbox-exporter
+    app.kubernetes.io/instance: blackbox-exporter
+    app.kubernetes.io/component: servicemonitor
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+    release: prometheus  # IMPORTANT: This label matches Prometheus selector
+  annotations:
+    meta.helm.sh/release-name: observability
+    meta.helm.sh/release-namespace: observability
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: blackbox-exporter  # Matches the service labels
+  endpoints:
+  - port: http-metrics  # Must match the service port name
+    interval: 30s
+    path: /metrics
+    scrapeTimeout: 10s
 ---
 # ConfigMap for Prometheus blackbox targets with Helm labels
 apiVersion: v1
@@ -191,3 +217,70 @@ data:
       labels:
         group: "internal-tcp-services"
         severity: "critical"
+---
+# Additional Scrape Configs for Blackbox Probes
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: additional-scrape-configs
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: prometheus
+    app.kubernetes.io/component: config
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: observability-stack
+  annotations:
+    meta.helm.sh/release-name: observability
+    meta.helm.sh/release-namespace: observability
+data:
+  blackbox-probes.yaml: |
+    # HTTP probes for internal services
+    - job_name: 'blackbox-http-internal'
+      metrics_path: /probe
+      params:
+        module: [http_2xx]
+      static_configs:
+        - targets:
+          - http://grafana.observability:3000
+          - http://prometheus-kube-prometheus-prometheus.observability:9090
+          - http://argocd-server.argocd:80
+      relabel_configs:
+        - source_labels: [__address__]
+          target_label: __param_target
+        - source_labels: [__param_target]
+          target_label: instance
+        - target_label: __address__
+          replacement: blackbox-exporter.observability.svc.cluster.local:9115
+
+    # TCP probe for PostgreSQL
+    - job_name: 'blackbox-tcp-internal'
+      metrics_path: /probe
+      params:
+        module: [tcp_connect]
+      static_configs:
+        - targets:
+          - postgres.student-api:5432
+      relabel_configs:
+        - source_labels: [__address__]
+          target_label: __param_target
+        - source_labels: [__param_target]
+          target_label: instance
+        - target_label: __address__
+          replacement: blackbox-exporter.observability.svc.cluster.local:9115
+
+    # Simple external test
+    - job_name: 'blackbox-external-test'
+      metrics_path: /probe
+      params:
+        module: [http_2xx]
+      static_configs:
+        - targets:
+          - https://httpbin.org/status/200
+      relabel_configs:
+        - source_labels: [__address__]
+          target_label: __param_target
+        - source_labels: [__param_target]
+          target_label: instance
+        - target_label: __address__
+          replacement: blackbox-exporter.observability.svc.cluster.local:9115
