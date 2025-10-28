@@ -362,7 +362,8 @@ resources: {}
 ## Node labels for pod assignment
 ## ref: https://kubernetes.io/docs/user-guide/node-selection/
 #
-nodeSelector: {}
+nodeSelector: 
+  kubernetes.io/hostname: minikube-m03
 
 ## Tolerations for pod assignment
 ## ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
@@ -1389,7 +1390,7 @@ sidecar:
 
 ## Override the deployment namespace
 ##
-namespaceOverride: ""
+namespaceOverride: "observability"
 
 ## Number of old ReplicaSets to retain
 ##
