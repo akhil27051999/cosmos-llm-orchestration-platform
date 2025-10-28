@@ -388,7 +388,7 @@ alertmanager:
   enabled: true
 
   # Optional: Override the namespace where Alertmanager will be deployed.
-  namespaceOverride: ""
+  namespaceOverride: "observability"
 
   ## Annotations for Alertmanager
   ##
@@ -1052,7 +1052,8 @@ alertmanager:
     ## Define which Nodes the Pods are scheduled on.
     ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector
     ##
-    nodeSelector: {}
+    nodeSelector:
+      kubernetes.io/hostname: minikube-m03
 
     ## Define resources requests and limits for single Pods.
     ## ref: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
@@ -2451,7 +2452,7 @@ kubeStateMetrics:
 ## Configuration for kube-state-metrics subchart
 ##
 kube-state-metrics:
-  namespaceOverride: ""
+  namespaceOverride: "observability"
   rbac:
     create: true
   releaseLabel: true
@@ -2879,7 +2880,8 @@ prometheusOperator:
       ## Define which Nodes the Pods are scheduled on.
       ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector
       ##
-      nodeSelector: {}
+      nodeSelector: 
+        kubernetes.io/hostname: minikube-m03
 
       ## Tolerations for use with node taints
       ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
@@ -4100,7 +4102,8 @@ prometheus:
     ## Define which Nodes the Pods are scheduled on.
     ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector
     ##
-    nodeSelector: {}
+    nodeSelector: 
+      kubernetes.io/hostname: minikube-m03
 
     ## Secrets is a list of Secrets in the same namespace as the Prometheus object, which shall be mounted into the Prometheus Pods.
     ## The Secrets are mounted into /etc/prometheus/secrets/. Secrets changes after initial creation of a Prometheus object are not
