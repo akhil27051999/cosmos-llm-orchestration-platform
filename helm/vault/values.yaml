@@ -28,8 +28,12 @@ service:
 # Storage configuration - USE EXISTING PVC
 persistence:
   enabled: true
-  existingClaim: "vault-pvc"  # Use existing PVC instead of creating new
+# existingClaim: "vault-pvc"  # Use existing PVC instead of creating new
   # Remove storageClassName, size, and accessModes since we're using existing PVC
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
+  storageClassName: standard
 
 # Vault configuration
 config:
