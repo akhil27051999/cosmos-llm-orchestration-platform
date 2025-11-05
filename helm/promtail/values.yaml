@@ -1,0 +1,117 @@
+# Custom Promtail configuration to scrape only application logs
+
+config:
+  # Loki server URL
+  clients:
+    - url: http://loki.observability.svc.cluster.local:3100/loki/api/v1/push
+  
+  # Server configuration
+  server:
+    http_listen_port: 3101
+    grpc_listen_port: 0
+  
+  # Positions file
+  positions:
+    filename: /tmp/positions.yaml
+  
+  # Scrape configurations - ONLY application logs
+  scrape_configs:
+    - job_name: kubernetes-pods-app
+      kubernetes_sd_configs:
+        - role: pod
+      
+      relabel_configs:
+        # ONLY keep student-api namespace
+        - source_labels: [__meta_kubernetes_namespace]
+          action: keep
+          regex: student-api
+        
+        # Drop system containers
+        - source_labels: [__meta_kubernetes_pod_container_name]
+          action: drop
+          regex: ".*(prometheus|grafana|loki|promtail|node-exporter|blackbox|postgres-exporter).*"
+        
+        # Set labels
+        - source_labels: [__meta_kubernetes_pod_name]
+          target_label: pod
+        - source_labels: [__meta_kubernetes_pod_container_name]
+          target_label: container
+        - source_labels: [__meta_kubernetes_namespace]
+          target_label: namespace
+        - source_labels: [__meta_kubernetes_pod_label_app]
+          target_label: app
+        - source_labels: [__meta_kubernetes_pod_node_name]
+          target_label: instance
+        - target_label: job
+          replacement: student-api-app
+        
+        # Set log path
+        - source_labels: [__meta_kubernetes_pod_uid, __meta_kubernetes_pod_container_name]
+          target_label: __path__
+          replacement: /var/log/pods/*$1/*.log
+          separator: /
+      
+      # Pipeline stages
+      pipeline_stages:
+        - cri: {}
+        - labelallow:
+            - "app"
+            - "container"
+            - "namespace"
+            - "pod"
+            - "instance"
+            - "job"
+    
+    # Explicitly drop ALL other namespaces
+    - job_name: drop-other-namespaces
+      kubernetes_sd_configs:
+        - role: pod
+      relabel_configs:
+        - source_labels: [__meta_kubernetes_namespace]
+          action: drop
+          regex: student-api
+        - action: drop
+          regex: .+
+          source_labels: []
+
+# DaemonSet configuration
+daemonset:
+  enabled: true
+
+# Service configuration
+service:
+  enabled: true
+  type: ClusterIP
+  port: 3101
+
+# Resource limits
+resources:
+  requests:
+    memory: 64Mi
+    cpu: 50m
+  limits:
+    memory: 128Mi
+    cpu: 200m
+
+# Security context
+securityContext:
+  runAsUser: 0
+  runAsGroup: 0
+  fsGroup: 0
+
+# Tolerations to run on all nodes
+tolerations:
+  - effect: NoSchedule
+    operator: Exists
+  - effect: NoExecute
+    operator: Exists
+
+# Service account
+serviceAccount:
+  create: true
+  name: ""
+
+# RBAC
+rbac:
+  pspEnabled: false
+  namespaced: false
