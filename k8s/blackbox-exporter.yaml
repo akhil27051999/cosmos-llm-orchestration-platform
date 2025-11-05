@@ -93,8 +93,6 @@ spec:
         app.kubernetes.io/component: exporter
         app.kubernetes.io/part-of: observability-stack
     spec:
-      nodeSelector:
-        type: dependent_services
       containers:
       - name: blackbox-exporter
         image: prom/blackbox-exporter:latest

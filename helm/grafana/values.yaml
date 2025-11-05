@@ -362,8 +362,7 @@ resources: {}
 ## Node labels for pod assignment
 ## ref: https://kubernetes.io/docs/user-guide/node-selection/
 #
-nodeSelector: 
-  kubernetes.io/hostname: minikube-m03
+nodeSelector: {}
 
 ## Tolerations for pod assignment
 ## ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
@@ -416,13 +415,13 @@ extraContainerVolumes: []
 ##
 persistence:
   type: pvc
-  enabled: true
+  enabled: false
   # storageClassName: default
   ## (Optional) Use this to bind the claim to an existing PersistentVolume (PV) by name.
   volumeName: ""
   accessModes:
     - ReadWriteOnce
-  size: 1Gi
+  size: 10Gi
   # annotations: {}
   finalizers:
     - kubernetes.io/pvc-protection
@@ -477,7 +476,7 @@ initChownData:
   #    cpu: 100m
   #    memory: 128Mi
   securityContext:
-    readOnlyRootFilesystem: true
+    readOnlyRootFilesystem: false
     runAsNonRoot: false
     runAsUser: 0
     seccompProfile:
@@ -489,15 +488,15 @@ initChownData:
         - ALL
 
 # Administrator credentials when not using an existing secret (see below)
-# adminUser: admin
+adminUser: admin
 # adminPassword: strongpassword
 
 # Use an existing secret for the admin user.
 admin:
   ## Name of the secret. Can be templated.
-  existingSecret: "grafana-secret"
-  userKey: "admin-user"
-  passwordKey: "admin-password"
+  existingSecret: ""
+  userKey: admin-user
+  passwordKey: admin-password
 
 ## Define command to be executed at startup by grafana container
 ## Needed if using `vault-env` to manage secrets (ref: https://banzaicloud.com/blog/inject-secrets-into-pods-vault/)
@@ -887,8 +886,7 @@ grafana.ini:
   grafana_net:
     url: https://grafana.net
   server:
-    domain: localhost
-    root_url: http://localhost:3000
+    domain: "{{ if (and .Values.ingress.enabled .Values.ingress.hosts) }}{{ tpl (.Values.ingress.hosts | first) . }}{{ else }}''{{ end }}"
 ## grafana Authentication can be enabled with the following values on grafana.ini
  # server:
       # The full public facing url you use in browser, used for redirects and emails
@@ -1390,7 +1388,7 @@ sidecar:
 
 ## Override the deployment namespace
 ##
-namespaceOverride: "observability"
+namespaceOverride: ""
 
 ## Number of old ReplicaSets to retain
 ##
