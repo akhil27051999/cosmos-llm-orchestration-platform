@@ -1,0 +1,113 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: promtail-serviceaccount
+  namespace: observability
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: promtail-clusterrole
+rules:
+- apiGroups: [""]
+  resources:
+  - nodes
+  - services
+  - pods
+  verbs:
+  - get
+  - watch
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: promtail-clusterrolebinding
+subjects:
+- kind: ServiceAccount
+  name: promtail-serviceaccount
+  namespace: observability
+roleRef:
+  kind: ClusterRole
+  name: promtail-clusterrole
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: promtail-config
+  namespace: observability
+data:
+  promtail.yaml: |
+    server:
+      http_listen_port: 9080
+      grpc_listen_port: 0
+    
+    positions:
+      filename: /tmp/positions.yaml
+    
+    clients:
+    - url: http://loki.observability.svc.cluster.local:3100/loki/api/v1/push
+    
+    scrape_configs:
+    # VERY SPECIFIC - Only Flask API logs
+    - job_name: flask-api-only
+      static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: flask-api
+          __path__: /var/log/pods/*student-api*flask-api*/*.log
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: promtail
+  namespace: observability
+  labels:
+    app: promtail
+spec:
+  selector:
+    matchLabels:
+      app: promtail
+  template:
+    metadata:
+      labels:
+        app: promtail
+    spec:
+      serviceAccountName: promtail-serviceaccount
+      hostNetwork: true
+      containers:
+      - name: promtail
+        image: grafana/promtail:2.8.0
+        args:
+        - -config.file=/etc/promtail/promtail.yaml
+        - -log.level=info
+        volumeMounts:
+        - name: config
+          mountPath: /etc/promtail
+        - name: positions
+          mountPath: /tmp
+        - name: logs
+          mountPath: /var/log
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+      volumes:
+      - name: config
+        configMap:
+          name: promtail-config
+      - name: positions
+        emptyDir: {}
+      - name: logs
+        hostPath:
+          path: /var/log
+      tolerations:
+      - operator: Exists
