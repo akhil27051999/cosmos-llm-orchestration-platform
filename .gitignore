@@ -23,3 +23,11 @@ vagrant/*.pem
 
 # ignore Vagrant state
 vagrant/.vagrant
+
+# ignore Terraform files
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+*.pem
+*.key
