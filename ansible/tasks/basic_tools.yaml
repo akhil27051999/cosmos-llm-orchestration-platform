@@ -1,0 +1,23 @@
+- name: Install development tools
+  apt:
+    name:
+      - git
+      - make
+      - unzip
+      - jq
+      - tree
+      - htop
+      - ncdu
+      - python3
+      - python3-pip
+      - python3-venv
+      - postgresql-client
+      - mysql-client
+    state: present
+
+- name: Install additional Python tools
+  pip:
+    name:
+      - awscli
+      - boto3
+    executable: pip3

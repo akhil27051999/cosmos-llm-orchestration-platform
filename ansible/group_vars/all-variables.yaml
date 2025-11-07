@@ -1,0 +1,11 @@
+# Versions
+terraform_version: "1.5.7"
+kubectl_version: "v1.28.0"
+ansible_version: "8.6.1"
+
+# Users
+dev_user: "ubuntu"
+docker_group: "docker"
+
+# System configuration
+timezone: "UTC"

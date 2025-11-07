@@ -1,0 +1,31 @@
+---
+- name: Install Ansible via pip
+  pip:
+    name: 
+      - ansible=={{ ansible_version }}
+      - ansible-lint
+      - yamllint
+    executable: pip3
+
+- name: Install Ansible community general collection
+  ansible.builtin.command:
+    cmd: ansible-galaxy collection install community.general
+
+- name: Create ansible directory structure
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - "/home/{{ dev_user }}/ansible"
+    - "/home/{{ dev_user }}/ansible/inventories"
+    - "/home/{{ dev_user }}/ansible/roles"
+    - "/home/{{ dev_user }}/ansible/playbooks"
+
+- name: Create ansible.cfg template
+  template:
+    src: ../templates/ansible.cfg.j2
+    dest: "/home/{{ dev_user }}/ansible/ansible.cfg"
+    owner: "{{ dev_user }}"
+    group: "{{ dev_user }}"
+    mode: '0644'
