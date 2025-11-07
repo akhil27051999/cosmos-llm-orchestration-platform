@@ -1,0 +1,21 @@
+- name: Update and upgrade system packages
+  apt:
+    update_cache: yes
+    upgrade: dist
+    cache_valid_time: 3600
+
+- name: Install prerequisites
+  apt:
+    name:
+      - software-properties-common
+      - apt-transport-https
+      - ca-certificates
+      - gnupg
+      - lsb-release
+      - curl
+      - wget
+    state: present
+
+- name: Set timezone
+  timezone:
+    name: "{{ timezone }}"

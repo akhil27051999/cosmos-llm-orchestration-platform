@@ -1,0 +1,29 @@
+- name: Bootstrap fresh VM with complete DevOps toolset
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  vars_files:
+    - group_vars/all-variables.yaml
+
+  tasks:
+    - name: Include system setup tasks
+      include_tasks: tasks/system_setup.yml
+
+    - name: Include basic tools tasks
+      include_tasks: tasks/basic_tools.yml
+
+    - name: Include Docker tasks
+      include_tasks: tasks/docker.yml
+
+    - name: Include Kubernetes tools tasks
+      include_tasks: tasks/kubernetes.yml
+
+    - name: Include Terraform tasks
+      include_tasks: tasks/terraform.yml
+
+    - name: Include Ansible tasks
+      include_tasks: tasks/ansible.yml
+
+    - name: Include cleanup tasks
+      include_tasks: tasks/cleanup.yml
