@@ -1,3 +1,4 @@
+---
 - name: Install development tools
   apt:
     name:
@@ -11,13 +12,8 @@
       - python3
       - python3-pip
       - python3-venv
+      - python3-full
+      - pipx
       - postgresql-client
       - mysql-client
     state: present
-
-- name: Install additional Python tools
-  pip:
-    name:
-      - awscli
-      - boto3
-    executable: pip3

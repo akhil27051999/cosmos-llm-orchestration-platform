@@ -8,22 +8,29 @@
 
   tasks:
     - name: Include system setup tasks
-      include_tasks: tasks/system_setup.yml
+      include_tasks: tasks/system_setup.yaml
+      tags: system_setup
 
     - name: Include basic tools tasks
-      include_tasks: tasks/basic_tools.yml
+      include_tasks: tasks/basic_tools.yaml
+      tags: basic_tools
 
     - name: Include Docker tasks
-      include_tasks: tasks/docker.yml
+      include_tasks: tasks/docker.yaml
+      tags: docker
 
     - name: Include Kubernetes tools tasks
-      include_tasks: tasks/kubernetes.yml
+      include_tasks: tasks/kubernetes.yaml
+      tags: kubernetes
 
     - name: Include Terraform tasks
-      include_tasks: tasks/terraform.yml
+      include_tasks: tasks/terraform.yaml
+      tags: terraform
 
     - name: Include Ansible tasks
-      include_tasks: tasks/ansible.yml
+      include_tasks: tasks/ansible.yaml
+      tags: ansible
 
     - name: Include cleanup tasks
-      include_tasks: tasks/cleanup.yml
+      include_tasks: tasks/cleanup.yaml
+      tags: cleanup
