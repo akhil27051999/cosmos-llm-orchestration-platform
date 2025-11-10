@@ -4,6 +4,7 @@ services:
       context: ./app
       dockerfile: Dockerfile
     image: flask-app:1.0.0
+    container_name: flask-app-container
     restart: always
     env_file:
       - ${ENV_FILE}
