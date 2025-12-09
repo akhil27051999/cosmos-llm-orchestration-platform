@@ -1,4 +1,205 @@
-# Simple REST API Webserver
+# RESTful API Webserver Application
+[![Ask DeepWiki](https://devin.ai/assets/askdeepwiki.png)](https://deepwiki.com/akhil27051999/RESTful-API-Webserver-Application)
+
+## Overview
+
+This repository contains a Student CRUD (Create, Read, Update, Delete) REST API built with Python and the Flask web framework. The project is a comprehensive showcase of modern DevOps practices, demonstrating everything from local development and containerization to CI/CD and deployment on both bare-metal and Kubernetes environments.
+
+The API adheres to RESTful design principles and the Twelve-Factor App methodology:
+-   **Versioning**: All endpoints are versioned (e.g., `/api/v1/students`).
+-   **Correct HTTP Methods**: `POST`, `GET`, `PUT`, and `DELETE` are used for their intended CRUD operations.
+-   **Logging**: Structured and meaningful logs are emitted with appropriate log levels.
+-   **Health Check**: A `/health` endpoint is provided to monitor API status.
+-   **Unit Testing**: Endpoints are covered by unit tests to ensure reliability.
+
+## Prerequisites
+
+Before running the project locally, ensure your system is set up with a Python virtual environment.
+
+1.  **Install Python `venv` and `pip`:**
+    ```sh
+    sudo apt update
+    sudo apt install python3-venv python3-pip
+    ```
+
+2.  **Create and activate a virtual environment:**
+    ```sh
+    python3 -m venv venv
+    source venv/bin/activate
+    ```
+
+3.  **Install project dependencies:**
+    ```sh
+    pip install -r app/requirements.txt
+    ```
+
+## Local Development
+
+The `Makefile` provides convenient shortcuts for common development tasks.
+
+1.  **Install dependencies:**
+    ```sh
+    make install
+    ```
+
+2.  **Run the application:**
+    ```sh
+    make run
+    ```
+    The Flask application will be available at `http://127.0.0.1:5000`.
+
+3.  **Run unit tests:**
+    ```sh
+    make test
+    ```
+
+## Containerization with Docker
+
+The application is containerized following Docker best practices, including multi-stage builds to reduce image size from 1.26GB to 110MB (a ~91% reduction).
+
+1.  **Build the Docker image:**
+    ```sh
+    make docker-build DOCKER_IMAGE_TAG=1.0.1
+    ```
+
+2.  **Run the Docker container:**
+    ```sh
+    make docker-run DOCKER_IMAGE_TAG=1.0.1
+    ```
+    The API will be available at `http://localhost:5000`.
+
+3.  **View container logs:**
+    ```sh
+    make docker-logs
+    ```
+
+4.  **Stop and remove the container:**
+    ```sh
+    make docker-stop
+    ```
+
+5.  **Remove the Docker image:**
+    ```sh
+    make docker-clean
+    ```
+
+## Local Multi-Container Setup with Docker Compose
+
+A `docker-compose.yaml` file is provided to orchestrate the Flask API, PostgreSQL database, and an Nginx reverse proxy for a one-click local development setup.
+
+1.  **Start the services:**
+    ```sh
+    make compose-up
+    ```
+
+2.  **Run database migrations:**
+    After starting the containers, create the database tables by running migrations.
+    ```sh
+    make migrate
+    ```
+
+3.  **Seed the database (Optional):**
+    Populate the database with initial dummy data.
+    ```sh
+    make seed
+    ```
+
+4.  **Stop and clean up all services:**
+    This command stops the containers and removes the associated volumes.
+    ```sh
+    make compose-down
+    ```
+
+## CI/CD Pipeline with GitHub Actions
+
+A CI pipeline is configured using GitHub Actions (`.github/workflows/ci-pipeline.yaml`) to automate the build, test, and publish process.
+
+**Pipeline Stages:**
+1.  **Build & Test**: Checks out code and runs unit tests.
+2.  **Docker Build & Push**: Builds the Docker image, tags it with the Git SHA, and pushes it to Docker Hub.
+3.  **Update Helm Chart**: Automatically updates the `image.tag` in the Helm chart (`helm/application/values.yaml`) and pushes the change back to the repository, enabling GitOps workflows.
+
+**Triggers:**
+-   On push or pull request to the `dev` or `main` branches affecting the `app/` directory.
+-   Manual trigger via `workflow_dispatch`.
+
+## Infrastructure as Code
+
+### Terraform
+The `terraform/` directory contains configurations to provision the necessary AWS infrastructure, including a VPC, subnets, EC2 instance, security groups, and IAM roles. This automates the setup of the underlying environment for deployment.
+
+### Ansible
+The `ansible/` directory contains playbooks designed to bootstrap a fresh VM. The playbook installs and configures a complete DevOps toolset, including Docker, Kubernetes tools (kubectl, minikube), Terraform, and more, making the machine ready for deployment and management tasks.
+
+## Deployment
+
+### Kubernetes Cluster Setup (Minikube)
+
+A local 3-node Kubernetes cluster can be provisioned using Minikube to simulate a production-like environment.
+
+1.  **Start the 3-node cluster:**
+    ```sh
+    minikube start --nodes 3
+    ```
+2.  **Label nodes for workload separation:**
+    This isolates application, database, and dependency workloads onto different nodes.
+    ```sh
+    kubectl label node minikube type=application
+    kubectl label node minikube-m02 type=database
+    kubectl label node minikube-m03 type=dependent_services
+    ```
+
+### Kubernetes Deployment with Helm and ArgoCD
+
+The entire application stack, including the API, database, and monitoring tools, is packaged as Helm charts located in the `helm/` directory. ArgoCD is used for GitOps-style continuous deployment.
+
+1.  **Deploy Application Stack using Manifests:**
+    The Kubernetes manifests in the `k8s/` directory can be used for direct deployment.
+    ```sh
+    # Deploy Vault for secret management
+    kubectl apply -f k8s/vault.yaml
+    
+    # Deploy External Secrets Operator
+    envsubst < k8s/external-secrets.yaml | kubectl apply -f -
+
+    # Deploy Database (Postgres)
+    kubectl apply -f k8s/database.yaml
+
+    # Deploy Application (Flask API)
+    kubectl apply -f k8s/application.yaml
+    ```
+2.  **Deploy using ArgoCD:**
+    The `argocd/` directory contains Application definitions to deploy the Helm charts via a GitOps workflow. Once ArgoCD is set up, it will monitor the Git repository and automatically sync the cluster state with the chart definitions.
+
+### Key Deployment Concepts:
+-   **Helm Charts**: For templatized, repeatable deployments.
+-   **Init Containers**: Used in the application deployment to run database migrations before the main container starts.
+-   **ConfigMaps**: To manage non-sensitive configuration like database host and port.
+-   **Secrets Management**: HashiCorp Vault, coupled with the External Secrets Operator (ESO), is used to securely inject database credentials and other secrets into pods.
+-   **Observability**: The stack includes configurations for Prometheus, Grafana, Loki, and Promtail for monitoring, metrics, and log aggregation.
+-   **Postman Collection**: A Postman collection is available at `postman/` for testing the API endpoints.
+
+### Verifying the Deployment
+
+-   **Check Pods:**
+    ```sh
+    kubectl get pods -n student-api
+    ```
+-   **Access the API:**
+    Port-forward the service to access it locally.
+    ```sh
+    kubectl port-forward svc/flask-api-service 8080:80 -n student-api
+    ```
+    The API is now accessible at `http://localhost:8080/students`.
+
+-   **Clean up resources:**
+    ```sh
+    kubectl delete -f k8s/application.yml
+    kubectl delete -f k8s/database.yml
+    kubectl delete -f k8s/vault.yml
+    kubectl delete -f k8s/external-secrets.yml
+
+  # Simple REST API Webserver
 
 ### Overview: 
 **Created a Student CRUD REST API using python programming language and Flask web framework.
