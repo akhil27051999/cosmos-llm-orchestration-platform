@@ -448,3 +448,298 @@ kubectl label node minikube-m03 type=dependent_services
   ```
   
 **At the end: "Our app is cloud-ready, secure, and scalable on Kubernetes".**
+
+## Helm-Based Deployments (Commands + Notes)
+
+All repository Helm charts live in `/helm`. Charts included:
+- helm/student-api (application chart)
+- helm/postgres (postgres chart — can be community chart copied)
+- helm/vault (vault chart)
+- helm/prometheus, helm/loki, helm/grafana, helm/promtail, etc.
+
+Create namespace:
+```bash
+kubectl create ns student-api || true
+```
+
+Install API chart:
+```bash
+helm install student-api helm/student-api -n student-api
+```
+
+Install DB chart:
+```bash
+helm install student-db helm/postgres -n student-api
+```
+
+Notes:
+- Use `values.yaml` to override image tag, replicas, env vars, service type.
+- DB migrations are triggered by the API chart using an initContainer (ensure initContainer has DB connection and credentials).
+- To pass secrets, use sealed-secrets/ExternalSecrets/Vault integration — do not put secrets in values.yaml in plaintext.
+
+Upgrade after changes (code or chart values):
+```bash
+helm upgrade student-api helm/student-api -n student-api
+```
+
+Uninstall:
+```bash
+helm uninstall student-api -n student-api
+helm uninstall student-db -n student-api
+```
+
+Verify pods:
+```bash
+kubectl get pods -n student-api
+```
+
+Test API:
+```bash
+# If NodePort or LoadBalancer available, hit the external IP; otherwise port-forward
+curl http://<NODE-IP>:<NODEPORT>/api/v1/students
+# or
+kubectl port-forward svc/student-api-service 8080:80 -n student-api
+curl http://localhost:8080/api/v1/students
+```
+
+Best practices:
+- Keep values.yaml minimal; environment-specific overrides via `values.prod.yaml`.
+- Use imagePullSecrets for private registries.
+- Use probes (liveness/readiness) for reliable rollouts.
+
+At the end: Our entire stack is deployed declaratively using Helm templates, enabling repeatable, scalable deployments.
+
+---
+
+## GitOps with ArgoCD (Commands + Notes)
+
+Install ArgoCD (apply manifests in repository):
+```bash
+kubectl create ns argocd || true
+kubectl apply -f argocd/ -n argocd
+```
+
+Port-forward ArgoCD UI:
+```bash
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+# Access UI: https://localhost:8080
+```
+
+ArgoCD key points:
+- Applications, repo credentials, and projects are stored declaratively under `/argocd/`.
+- ArgoCD watches the Helm charts and `values.yaml` changes, then syncs automatically.
+- GitHub Actions updates `helm/student-api/values.yaml` (image.tag) after CI build.
+- ArgoCD picks up the change and deploys via auto-sync.
+
+Example GitHub Actions step to bump image tag:
+```yaml
+- name: Update Helm values with new image tag
+  run: |
+    git config user.email "ci@ci"
+    git config user.name "ci-bot"
+    yq e -i '.image.tag = env(IMAGE_TAG)' helm/student-api/values.yaml
+    git add helm/student-api/values.yaml
+    git commit -m "chore: bump student-api image to $IMAGE_TAG"
+    git push origin main
+  env:
+    IMAGE_TAG: ${{ steps.build.outputs.image_tag }}
+```
+
+Apply ArgoCD resources (if you change them):
+```bash
+kubectl apply -f argocd/ -n argocd
+```
+
+At the end: We achieve full GitOps — automated, version-controlled, self-correcting deployments.
+
+---
+
+## Observability Stack (Prometheus, Loki, Grafana, Exporters) — Helm (Commands)
+
+Create observability namespace:
+```bash
+kubectl create ns observability || true
+```
+
+Install components (Helm charts under `helm/` in the repo):
+```bash
+helm install prometheus helm/prometheus -n observability
+helm install loki helm/loki -n observability
+helm install promtail helm/promtail -n observability
+helm install grafana helm/grafana -n observability
+helm install blackbox helm/blackbox-exporter -n observability
+helm install node-exporter helm/node-exporter -n observability
+helm install kube-state-metrics helm/kube-state-metrics -n observability
+helm install postgres-exporter helm/postgres-exporter -n observability
+```
+
+Verify:
+```bash
+kubectl get pods -n observability
+```
+
+Grafana access:
+```bash
+kubectl port-forward svc/grafana -n observability 3000:80
+# Open http://localhost:3000
+# Default credentials depend on chart (check secret or values)
+```
+
+Data sources to configure in Grafana:
+- Prometheus
+- Loki
+
+Promtail:
+- Pulls logs from application pods (via label selectors)
+- Ensure promtail's serviceAccount has permissions to read pod logs
+
+At the end: Full end-to-end observability for logs + metrics + service uptime.
+
+---
+
+## Dashboards & Alerts (Grafana + Alertmanager + Slack) — Commands & Notes
+
+Dashboards:
+- Import or provision dashboards for:
+  - DB metrics (Postgres exporter)
+  - Application logs (Loki)
+  - Node & kube-state metrics
+  - Blackbox monitoring (uptime/latency)
+
+Alertmanager Slack integration (example snippet to add to Alertmanager config):
+```yaml
+receivers:
+  - name: 'slack'
+    slack_configs:
+      - channel: '#alerts'
+        text: "🔥 Alert: {{ .CommonAnnotations.description }}"
+```
+
+Apply alert rules (example):
+```bash
+kubectl apply -f observability/alerts/ -n observability
+```
+
+Test alert:
+```bash
+kubectl apply -f observability/alerts/test-alert.yaml -n observability
+```
+
+Common alert conditions:
+- CPU > 80% for 5 minutes
+- Disk > 85%
+- 5xx error spike in 10 minutes
+- Latency SLI breaches (p90/p95/p99)
+- Pod restart spikes for DB/Vault/ArgoCD
+
+At the end: Production-grade observability with alerting to Slack.
+
+---
+
+## Troubleshooting (Helm / K8s / ArgoCD / Observability)
+
+Common checks and commands:
+```bash
+# Helm
+helm list -n student-api
+helm status student-api -n student-api
+helm history student-api -n student-api
+
+# Kubernetes
+kubectl get pods -A
+kubectl describe pod <pod> -n <ns>
+kubectl logs -f <pod> -n <ns> [-c <container>]
+kubectl get events -n <ns>
+
+# ArgoCD
+kubectl -n argocd get applications
+kubectl -n argocd describe application <app-name>
+kubectl -n argocd logs deploy/argocd-server
+
+# Observability
+kubectl -n observability port-forward svc/prometheus 9090:9090
+kubectl -n observability port-forward svc/loki 3100:3100
+kubectl -n observability port-forward svc/grafana 3000:80
+
+# Debugging DB connectivity
+psql "postgresql://student_user:student123@<host>:5432/studentdb"
+
+# Check node ports / LB
+kubectl get svc -n student-api
+```
+
+Common failure patterns:
+- Pod CrashLoopBackOff → check `kubectl logs` and `kubectl describe` for events and stack trace.
+- InitContainer fails (migrations) → ensure DB reachable and credentials correct.
+- Helm upgrade fails due to validation → run `helm lint` and inspect `helm template` output before applying.
+- ArgoCD out-of-sync → check app status in UI and sync errors in `kubectl -n argocd describe application <app>`.
+
+Remediations:
+- Fix configuration in `values.yaml` or secrets, commit, and let ArgoCD sync.
+- For migrations: run migrations manually to validate before adding as initContainer.
+- For observability: ensure scrape endpoints are reachable and service monitors match labels.
+
+---
+
+## Maintenance & Best Practices (Commands & Notes)
+
+Dependency updates:
+```bash
+pip install --upgrade <package>
+pip freeze > requirements.txt
+git add requirements.txt && git commit -m "chore: update dependencies"
+```
+
+Helm best practices:
+- Keep small values files per environment (values.dev.yaml, values.prod.yaml).
+- Use `helm diff` plugin to preview changes: `helm plugin install https://github.com/databus23/helm-diff`
+- Use release names and namespaces consistently.
+
+Backups & restores (Postgres):
+- Schedule regular DB dumps:
+```bash
+pg_dump -U student_user -h <host> -Fc studentdb > studentdb-$(date +%F).dump
+```
+- Test restores in staging.
+
+Secrets:
+- Prefer Vault / External Secrets / sealed-secrets — do not store plaintext secrets in Git.
+
+Rolling updates:
+- Use `readinessProbe` for safe rollouts
+- Enable `maxUnavailable` and `maxSurge` in deployment strategy as appropriate
+
+---
+
+## Final Checklist (Commands to Start Working)
+
+```bash
+# activate venv
+source .venv/bin/activate
+
+# populate .env (edit values)
+
+# ensure PostgreSQL running / or start Docker Compose
+docker compose up -d --build
+
+# run migrations
+flask db upgrade
+# or inside container
+docker exec -it flask-container flask db upgrade
+
+# start application (dev)
+flask run
+```
+
+---
+
+## Closing Statements
+
+This repository demonstrates a complete development-to-production workflow:
+- Local development with virtualenv and Docker Compose
+- CI that builds images and updates Helm values
+- Declarative deployments using Helm charts
+- GitOps delivery using ArgoCD
+- Production-grade observability using Prometheus, Loki, and Grafana
+
+Our entire stack is deployed declaratively using Helm templates, enabling repeatable, scalable deployments. We achieve full GitOps — automated, version-controlled, self-correcting deployments. We also provide end-to-end observability and alerts to help operate the system in production.
