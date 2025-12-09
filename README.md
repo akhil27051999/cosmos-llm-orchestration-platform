@@ -1,5 +1,42 @@
 # RESTful API Webserver Application
 
+## 🛠️ Tech Stack & Tools
+
+<p align="left">
+
+<!-- Programming -->
+<img src="https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white" alt="Python" />
+<img src="https://img.shields.io/badge/Flask-000000?logo=flask&logoColor=white" alt="Flask" />
+<img src="https://img.shields.io/badge/Shell_Scripting-121011?logo=gnu-bash&logoColor=white" alt="Shell Script" />
+
+<!-- Containers & DevOps -->
+<img src="https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white" alt="Docker" />
+<img src="https://img.shields.io/badge/Docker--Compose-2496ED?logo=docker&logoColor=white" alt="Docker Compose" />
+<img src="https://img.shields.io/badge/Vagrant-1563FF?logo=vagrant&logoColor=white" alt="Vagrant" />
+<img src="https://img.shields.io/badge/Kubernetes-326CE5?logo=kubernetes&logoColor=white" alt="Kubernetes" />
+<img src="https://img.shields.io/badge/Helm-0F1689?logo=helm&logoColor=white" alt="Helm" />
+<img src="https://img.shields.io/badge/ArgoCD-EF7B4D?logo=argo&logoColor=white" alt="ArgoCD" />
+
+<!-- CI/CD -->
+<img src="https://img.shields.io/badge/GitHub_Actions-2088FF?logo=githubactions&logoColor=white" alt="GitHub Actions" />
+<img src="https://img.shields.io/badge/Makefile-000000?logo=gnu&logoColor=white" alt="Makefile" />
+
+<!-- Monitoring & Observability -->
+<img src="https://img.shields.io/badge/Prometheus-E6522C?logo=prometheus&logoColor=white" alt="Prometheus" />
+<img src="https://img.shields.io/badge/Blackbox_Exporter-000000?logo=prometheus&logoColor=white" alt="Blackbox Exporter" />
+<img src="https://img.shields.io/badge/DB_Exporter-316192?logo=postgresql&logoColor=white" alt="DB Exporter" />
+<img src="https://img.shields.io/badge/Grafana-F46800?logo=grafana&logoColor=white" alt="Grafana" />
+<img src="https://img.shields.io/badge/Loki-4c8b64?logo=grafana&logoColor=white" alt="Loki" />
+<img src="https://img.shields.io/badge/Alertmanager-E6522C?logo=prometheus&logoColor=white" alt="Alertmanager" />
+
+<!-- Databases -->
+<img src="https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL" />
+
+<!-- API & Tools -->
+<img src="https://img.shields.io/badge/Postman-FF6C37?logo=postman&logoColor=white" alt="Postman" />
+
+</p>
+
 ## Overview
 
 This repository contains a Student CRUD (Create, Read, Update, Delete) REST API built with Python and the Flask web framework. The project is a comprehensive showcase of modern DevOps practices, demonstrating everything from local development and containerization to CI/CD and deployment on both bare-metal and Kubernetes environments.
