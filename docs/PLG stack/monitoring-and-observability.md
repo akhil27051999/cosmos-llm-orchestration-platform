@@ -1,7 +1,6 @@
 # Observability Stack — Prometheus, Loki, Grafana (Kubernetes)
 
-<img width="738" height="755" alt="Screenshot 2025-12-10 195222" src="https://github.com/user-attachments/assets/e40e54dd-278d-4251-a700-8f155eb023c4" />
-
+https://github.com/user-attachments/assets/8c73ad8f-a99b-4508-843a-71b92d75c462
 
 This repository documents a production-ready, cloud-native observability stack and recommended configuration for metrics and logs in Kubernetes.
 
