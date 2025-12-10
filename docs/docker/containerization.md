@@ -1,5 +1,8 @@
 # Docker for Flask REST API — Complete Implementation Guide
 
+<img width="666" height="477" alt="Screenshot 2025-12-10 195606" src="https://github.com/user-attachments/assets/bd42928b-2695-4757-bedf-e4a88ad35eb8" />
+
+
 ### Overview
 
 This guide covers Docker implementation for a Flask REST API that uses PostgreSQL. It explains how to build efficient, secure, and production-ready Docker images, how to run containers for development and production, and how to troubleshoot common issues.
