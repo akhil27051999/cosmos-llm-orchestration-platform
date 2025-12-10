@@ -1,7 +1,6 @@
 # Docker for Flask REST API — Complete Implementation Guide
 
-<img width="666" height="477" alt="Screenshot 2025-12-10 195606" src="https://github.com/user-attachments/assets/bd42928b-2695-4757-bedf-e4a88ad35eb8" />
-
+Uploading Screen Recording 2025-12-10 194256.mp4…
 
 ### Overview
 
