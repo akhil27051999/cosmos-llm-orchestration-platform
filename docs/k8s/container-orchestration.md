@@ -1,5 +1,7 @@
 # Kubernetes Cluster Deployment Documentation
 
+<img width="672" height="888" alt="Screenshot 2025-12-10 195453" src="https://github.com/user-attachments/assets/a3c7ef07-aec3-4728-b822-a34a7e5efbbe" />
+
 ## Milestone Expectation
 
 ### Problem Statement
