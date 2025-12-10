@@ -1,4 +1,7 @@
 # Helm - Kubernetes Package Manager
+
+<img width="761" height="461" alt="Screenshot 2025-12-10 195411" src="https://github.com/user-attachments/assets/703b2009-05fe-4610-bd3f-e580565e60ae" />
+
 ### What is Helm?
 Helm is the package manager for Kubernetes, often referred to as "the apt/yum/homebrew for K8s". It simplifies deploying and managing applications on Kubernetes clusters.
 
