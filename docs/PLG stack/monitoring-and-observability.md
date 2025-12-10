@@ -1,5 +1,8 @@
 # Observability Stack — Prometheus, Loki, Grafana (Kubernetes)
 
+<img width="738" height="755" alt="Screenshot 2025-12-10 195222" src="https://github.com/user-attachments/assets/e40e54dd-278d-4251-a700-8f155eb023c4" />
+
+
 This repository documents a production-ready, cloud-native observability stack and recommended configuration for metrics and logs in Kubernetes.
 
 - Metrics: Prometheus scrapes exporters (node-exporter, kube-state-metrics, postgres-exporter, blackbox-exporter).
