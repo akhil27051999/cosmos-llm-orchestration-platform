@@ -1,7 +1,6 @@
 # Student-REST-API — End-to-End Setup & Run Guide
 
-<img width="674" height="485" alt="Screenshot 2025-12-10 195625" src="https://github.com/user-attachments/assets/bdb8b7b7-9b7d-422b-a0e7-5937b8631ab7" />
-
+https://github.com/user-attachments/assets/1f86060a-b82a-4c2c-b263-c99ec93a8954
 
 Overview
 --------
