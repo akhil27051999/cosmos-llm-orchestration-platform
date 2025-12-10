@@ -1,5 +1,8 @@
 # Student-REST-API — End-to-End Setup & Run Guide
 
+<img width="674" height="485" alt="Screenshot 2025-12-10 195625" src="https://github.com/user-attachments/assets/bdb8b7b7-9b7d-422b-a0e7-5937b8631ab7" />
+
+
 Overview
 --------
 This document is an end-to-end, step-by-step guide for setting up, running, testing, and maintaining the Student-REST-API Flask project. It is intentionally written as an implementation guide for newcomers (no code is included here because the repository already contains the source). The guide covers environment preparation, dependency installation, database setup (PostgreSQL), migrations, running in development and production, testing, common troubleshooting, and best-practices for maintenance and contribution.
