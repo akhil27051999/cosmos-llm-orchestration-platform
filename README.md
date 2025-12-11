@@ -531,20 +531,6 @@ ArgoCD key points:
 - GitHub Actions updates `helm/student-api/values.yaml` (image.tag) after CI build.
 - ArgoCD picks up the change and deploys via auto-sync.
 
-Example GitHub Actions step to bump image tag:
-```yaml
-- name: Update Helm values with new image tag
-  run: |
-    git config user.email "ci@ci"
-    git config user.name "ci-bot"
-    yq e -i '.image.tag = env(IMAGE_TAG)' helm/student-api/values.yaml
-    git add helm/student-api/values.yaml
-    git commit -m "chore: bump student-api image to $IMAGE_TAG"
-    git push origin main
-  env:
-    IMAGE_TAG: ${{ steps.build.outputs.image_tag }}
-```
-
 Apply ArgoCD resources (if you change them):
 ```bash
 kubectl apply -f argocd/ -n argocd
@@ -567,10 +553,6 @@ helm install prometheus helm/prometheus -n observability
 helm install loki helm/loki -n observability
 helm install promtail helm/promtail -n observability
 helm install grafana helm/grafana -n observability
-helm install blackbox helm/blackbox-exporter -n observability
-helm install node-exporter helm/node-exporter -n observability
-helm install kube-state-metrics helm/kube-state-metrics -n observability
-helm install postgres-exporter helm/postgres-exporter -n observability
 ```
 
 Verify:
