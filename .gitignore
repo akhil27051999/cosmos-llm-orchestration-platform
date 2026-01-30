@@ -30,3 +30,6 @@ vagrant/.vagrant
 *.tfvars
 *.pem
 *.key
+
+.venv/
+migrations/
