@@ -22,7 +22,7 @@ def add_student():
     db.session.add(new_student)
     db.session.commit()
     
-    return jsonify({"message": "Student added successfully!"}), 201
+    return jsonify({"message": "Student added successfully!", "id": new_student.id}), 201
 
 @student_bp.route('', methods=['GET'])
 def get_students():
