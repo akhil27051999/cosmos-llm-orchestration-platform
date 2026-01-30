@@ -1,16 +1,34 @@
 from app import create_app, db
 from app.models import Student
+import random
 
-app = create_app()
-
-with app.app_context():
-    # Dummy students
-    students = [
-        Student(name="Akhil Thyadi", domain="Electronics", gpa=7.01, email="160101130028@cutm.ac.in"),
-        Student(name="Anudeep Sistu", domain="Electronics", gpa=7.8, email="160101130046@cutm.ac.in"),
-        Student(name="Atchyuth Teki", domain="Electronics", gpa=7.5, email="160101130038@cutm.ac.in"),
+def seed_students(count=100):
+    domains = [
+        "Electronics",
+        "Mechanical",
+        "Civil",
+        "Computer Science",
+        "Mathematics",
+        "Physics"
     ]
+
+    students = []
+    for i in range(1, count + 1):
+        students.append(
+            Student(
+                name=f"Student {i}",
+                domain=random.choice(domains),
+                gpa=round(random.uniform(5.0, 10.0), 2),
+                email=f"student{i:03d}@university.edu"
+            )
+        )
 
     db.session.bulk_save_objects(students)
     db.session.commit()
-    print("Dummy data inserted successfully!")
+    print(f" {count} students inserted successfully")
+
+if __name__ == "__main__":
+    app = create_app()
+    with app.app_context():
+        seed_students(100)
+
