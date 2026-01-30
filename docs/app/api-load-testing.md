@@ -1,135 +1,144 @@
-# Load Testing - Student Management API
+# Flask REST API Load Testing
+
+This repository contains load testing scripts for the Student Management Flask API, which manages student records using PostgreSQL.
 
 ## Overview
 
-This directory contains load testing scripts for the Student Management API. We use Locust to simulate concurrent users and measure API performance under load.
+The API provides endpoints to manage students:
 
-The load test covers the following endpoints:
+Method	Endpoint	Description
+GET	/	Home page
+GET	/health	Health check
+GET	/students	Get all students
+POST	/students	Add a new student
+GET	/students/<id>	Get a single student
+PUT	/students/<id>	Update a student
+DELETE	/students/<id>	Delete a student
 
-- `GET /students` — Retrieve all students
-- `POST /students` — Create a new student
+## Load Testing Goals:
 
-## Prerequisites
+- Test the performance and stability of the API under concurrent requests.
+- Measure request throughput (requests per second), response times, and failure rates.
+- Identify potential bottlenecks for GET and POST requests.
+- Verify that the API can handle both read and write-heavy traffic.
 
-- Python 3.10+
-- Locust 2.x
-- The Flask API must be running locally or remotely
+## Setup
 
-Install Locust if not already installed:
+Activate virtual environment:
 
 ```bash
+source .venv/bin/activate
+```
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
 pip install locust
 ```
 
-## Running the Load Test
-
-1. Start your Flask API:
+Ensure API is running:
 
 ```bash
-export FLASK_APP=app:create_app
-export FLASK_ENV=development
 flask run --host=0.0.0.0 --port=5000
 ```
 
-2. Open a new terminal and navigate to the `tests/` directory:
+Verify /students and /health endpoints are accessible.
+
+## Load Testing with Locust
+
+### Locust Test Script
+
+The load test script is located at `tests/load_test.py`.
+
+It simulates Student API users performing:
+
+- GET /students
+- POST /students with random student data
+
+(Optional: can add PUT, DELETE, GET /students/<id>)
+
+Run Locust:
 
 ```bash
 cd tests
-```
-
-3. Run Locust:
-
-```bash
 locust -f load_test.py --host=http://localhost:5000 --web-host 0.0.0.0
 ```
 
-4. Access the web interface in your browser and specify number of users and spawn rate:
+Locust web UI will be available at `http://<server-ip>:8089`.
 
-```
-http://<your-server-ip>:8089
-```
+Configure number of users and spawn rate from the UI.
 
-Start the test from the web UI.
+### Endpoints Tested in Locust
 
-## Load Test Script (tests/load_test.py)
-
-```python
-from locust import HttpUser, task, between
-import random
-
-class StudentApiUser(HttpUser):
-    wait_time = between(1, 2)
-
-    @task(2)
-    def get_students(self):
-        self.client.get("/students")
-
-    @task(1)
-    def create_student(self):
-        student_id = random.randint(1000, 9999)
-        payload = {
-            "name": f"Test User {student_id}",
-            "domain": "Engineering",
-            "gpa": round(random.uniform(6.0, 10.0), 2),
-            "email": f"testuser{student_id}@example.com"
-        }
-        self.client.post("/students", json=payload)
-```
+- `/` (Home) — lightweight endpoint
+- `/health` (Health check) — lightweight endpoint
+- `/students` (GET/POST) — core student API
+- `/students/<id>` (GET/PUT/DELETE) — single student operations
 
 ## Observations from Load Testing
 
-The load test was run with 50 concurrent users and a spawn rate of 5 users per second.
+### GET / and /health
 
-### Summary Table
+- All requests succeeded.
+- Median response: 150–200ms.
+- Low payload, very fast and reliable.
 
-| Request       | # Requests | # Failures | Median (ms) | Average (ms) | Min (ms) | Max (ms) | Avg Size (bytes) |
-|---------------|------------|------------|-------------|--------------|----------|----------|-------------------|
-| GET /students | 1257       | 0          | 13          | 17.87        | 5        | 159      | 40932.49          |
-| POST /students| 601        | 19         | 8           | 11.65        | 6        | 78       | 1934.76           |
-| **Aggregated**| 1858       | 19         | 11          | 15.86        | 5        | 159      | 28318.05          |
+### GET /students
 
-### Observations
+- Handles ~13 requests/sec for 1,300+ records.
+- Median response ≈ 291ms.
+- 95th percentile ≈ 780ms (due to large payloads).
 
-- GET Requests:
-  - No failures occurred.
-  - Response times were fast (median: 13 ms, average: 17.87 ms), showing the API handles read-heavy operations well.
+### POST /students
 
-- POST Requests:
-  - A small number of failures (19) occurred out of 601 requests (~3% failure rate).
-  - Response times were slightly lower than GET requests (median: 8 ms, average: 11.65 ms), but failures indicate occasional issues with creating new entries under load.
+- Some failures observed due to duplicate emails (email is unique in DB).
+- Handles ~5–6 successful requests/sec with random payload.
+- Median response ≈ 325ms; maximum ≈ 1.6s.
+- Recommendation: generate unique test data for high-volume writes.
 
-- Overall Performance:
-  - The API handled approximately 32 requests/sec (aggregated) under this simulated load.
-  - Response times stayed under 200 ms for both GET and POST requests, indicating good responsiveness.
-  - Failures on POST requests may require investigation into database constraints, concurrency handling, or server resource limits.
+### Single student operations
 
-## Recommendations
+- GET/PUT/DELETE /students/<id> are extremely fast (avg ~20ms).
+- Some GET failures occur if the student ID was deleted during the test.
 
-- Investigate POST failures to identify whether they are caused by:
-  - database constraints (unique indexes, FK constraints),
-  - race conditions during concurrent inserts,
-  - connection/timeouts to the database,
-  - or insufficient server resources under burst load.
+### Overall
 
-- Consider:
-  - implementing database connection pooling,
-  - adding retries for transient failures (with exponential backoff),
-  - validating and sanitizing payloads before inserting,
-  - introducing optimistic locking or deduplication where appropriate.
+- Aggregated throughput: ~32–35 requests/sec across endpoints.
+- Median response for all endpoints ≈ 48ms.
+- POST operations require better handling for unique constraints.
+- API is stable and performant for read-heavy workloads.
 
-- Run additional tests:
-  - with higher concurrency to observe scaling limits,
-  - with realistic user behavior (think time, different endpoints),
-  - varying payload sizes and database load.
+## Load Testing Best Practices
 
-- Use the Locust web interface to continuously monitor:
-  - requests/sec (RPS),
-  - failure rates,
-  - response-time percentiles (median, 95th, 99th),
-  - and request/response sizes.
+- Use unique test data for POST requests to avoid conflicts.
+- Seed the database with realistic test data (`seed.py`) before running tests.
+- Monitor database performance under concurrent writes.
+- Incrementally increase users in Locust to observe scaling limits.
+- Measure 95th percentile response times for production-level performance.
 
-## Notes
+## Generating Test Data
 
-- Keep test environment as close to production as possible for meaningful results (same DB size/config, same instance types).
-- Capture and inspect server logs during the test to correlate errors and stack traces with failing requests.
-- If failures persist, run a focused test targeting POSTs to reproduce and capture detailed error responses from the API.
+Seed the database with dummy students:
+
+```bash
+python seed.py
+```
+
+This will insert 100 dummy students with unique emails.
+
+## Running Advanced Tests
+
+To load test all endpoints including `/students/<id>` operations:
+
+Modify `load_test.py` to:
+
+- Maintain a list of existing student IDs.
+- Perform GET/PUT/DELETE operations on valid IDs.
+- Avoid None or deleted IDs to reduce failures.
+
+Run Locust as usual:
+
+```bash
+locust -f tests/load_test.py --host=http://localhost:5000 --web-host 0.0.0.0
+```
