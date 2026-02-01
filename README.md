@@ -817,7 +817,7 @@ receivers:
   - name: 'slack'
     slack_configs:
       - channel: '#alerts'
-        text: "🔥 Alert: {{ .CommonAnnotations.description }}"
+        text: " Alert: {{ .CommonAnnotations.description }}"
 ```
 
 Apply alert rules (example):
