@@ -522,7 +522,7 @@ pip install Flask Flask-SQLAlchemy Flask-Migrate psycopg2-binary python-dotenv p
 ### Self-hosted runner
 - GitHub Actions running on our laptop/VM to simulate real-world self-hosted CI.
 
-**At the end: "Every commit to main will test your code and publish a Docker image"**
+`At the end`: "Every commit to main will test your code and publish a Docker image"
 
 ## Deploy on Bare Metal
 **To deploy on a “production-like” environment without Kubernetes — just Docker + Nginx on a Vagrant box.**
@@ -551,7 +551,7 @@ server {
 }
 ```
 - **Access API at http://localhost:8080/api/v1/students.**
-- **At the end: "we’ll have a mini production setup with scaling + load balancing".**
+`At the end`: "we’ll have a mini production setup with scaling + load balancing".
 
 ## Setup Kubernetes Cluster
 
@@ -586,7 +586,7 @@ kubectl label node minikube-m02 type=database
 kubectl label node minikube-m03 type=dependent_services
 ```
 
-**At the end: "we have a real K8s cluster with node roles".**
+`At the end`: "we have a real K8s cluster with node roles".
 
 ## Deploy API, DB and other services in Kubernetes
 
@@ -670,7 +670,7 @@ kubectl label node minikube-m03 type=dependent_services
   kubectl delete -f k8s/external-secrets.yml
   ```
   
-**At the end: "Our app is cloud-ready, secure, and scalable on Kubernetes".**
+`At the end`: "Our app is cloud-ready, secure, and scalable on Kubernetes".
 
 ## Helm-Based Deployments (Commands + Notes)
 
@@ -730,7 +730,7 @@ Best practices:
 - Use imagePullSecrets for private registries.
 - Use probes (liveness/readiness) for reliable rollouts.
 
-At the end: Our entire stack is deployed declaratively using Helm templates, enabling repeatable, scalable deployments.
+`At the end`: Our entire stack is deployed declaratively using Helm templates, enabling repeatable, scalable deployments.
 
 ---
 
@@ -759,7 +759,7 @@ Apply ArgoCD resources (if you change them):
 kubectl apply -f argocd/ -n argocd
 ```
 
-At the end: We achieve full GitOps — automated, version-controlled, self-correcting deployments.
+`At the end`: We achieve full GitOps — automated, version-controlled, self-correcting deployments.
 
 ---
 
@@ -798,7 +798,7 @@ Promtail:
 - Pulls logs from application pods (via label selectors)
 - Ensure promtail's serviceAccount has permissions to read pod logs
 
-At the end: Full end-to-end observability for logs + metrics + service uptime.
+`At the end`: Full end-to-end observability for logs + metrics + service uptime.
 
 ---
 
@@ -837,104 +837,7 @@ Common alert conditions:
 - Latency SLI breaches (p90/p95/p99)
 - Pod restart spikes for DB/Vault/ArgoCD
 
-At the end: Production-grade observability with alerting to Slack.
-
----
-
-## Troubleshooting (Helm / K8s / ArgoCD / Observability)
-
-Common checks and commands:
-```bash
-# Helm
-helm list -n student-api
-helm status student-api -n student-api
-helm history student-api -n student-api
-
-# Kubernetes
-kubectl get pods -A
-kubectl describe pod <pod> -n <ns>
-kubectl logs -f <pod> -n <ns> [-c <container>]
-kubectl get events -n <ns>
-
-# ArgoCD
-kubectl -n argocd get applications
-kubectl -n argocd describe application <app-name>
-kubectl -n argocd logs deploy/argocd-server
-
-# Observability
-kubectl -n observability port-forward svc/prometheus 9090:9090
-kubectl -n observability port-forward svc/loki 3100:3100
-kubectl -n observability port-forward svc/grafana 3000:80
-
-# Debugging DB connectivity
-psql "postgresql://student_user:student123@<host>:5432/studentdb"
-
-# Check node ports / LB
-kubectl get svc -n student-api
-```
-
-Common failure patterns:
-- Pod CrashLoopBackOff → check `kubectl logs` and `kubectl describe` for events and stack trace.
-- InitContainer fails (migrations) → ensure DB reachable and credentials correct.
-- Helm upgrade fails due to validation → run `helm lint` and inspect `helm template` output before applying.
-- ArgoCD out-of-sync → check app status in UI and sync errors in `kubectl -n argocd describe application <app>`.
-
-Remediations:
-- Fix configuration in `values.yaml` or secrets, commit, and let ArgoCD sync.
-- For migrations: run migrations manually to validate before adding as initContainer.
-- For observability: ensure scrape endpoints are reachable and service monitors match labels.
-
----
-
-## Maintenance & Best Practices (Commands & Notes)
-
-Dependency updates:
-```bash
-pip install --upgrade <package>
-pip freeze > requirements.txt
-git add requirements.txt && git commit -m "chore: update dependencies"
-```
-
-Helm best practices:
-- Keep small values files per environment (values.dev.yaml, values.prod.yaml).
-- Use `helm diff` plugin to preview changes: `helm plugin install https://github.com/databus23/helm-diff`
-- Use release names and namespaces consistently.
-
-Backups & restores (Postgres):
-- Schedule regular DB dumps:
-```bash
-pg_dump -U student_user -h <host> -Fc studentdb > studentdb-$(date +%F).dump
-```
-- Test restores in staging.
-
-Secrets:
-- Prefer Vault / External Secrets / sealed-secrets — do not store plaintext secrets in Git.
-
-Rolling updates:
-- Use `readinessProbe` for safe rollouts
-- Enable `maxUnavailable` and `maxSurge` in deployment strategy as appropriate
-
----
-
-## Final Checklist (Commands to Start Working)
-
-```bash
-# activate venv
-source .venv/bin/activate
-
-# populate .env (edit values)
-
-# ensure PostgreSQL running / or start Docker Compose
-docker compose up -d --build
-
-# run migrations
-flask db upgrade
-# or inside container
-docker exec -it flask-container flask db upgrade
-
-# start application (dev)
-flask run
-```
+`At the end`: Production-grade observability with alerting to Slack.
 
 ---
 
