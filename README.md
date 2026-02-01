@@ -31,7 +31,7 @@ This repository contains a Student CRUD (Create, Read, Update, Delete) REST API 
 - Resource Monitoring        : AWS CloudWatch, AWS Cloud-Trail
 ```
 
-## MileStone 1 : REST API Application Design
+## REST API Application Design
 
 ### I. Project Prerequisites Setup
 
