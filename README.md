@@ -35,27 +35,33 @@ This repository contains a Student CRUD (Create, Read, Update, Delete) REST API 
 
 ### I. Project Prerequisites Setup
 
-#### 1. Create a public repository on GitHub and clone the repository into the local.
-#### 2. Install the Prerequisites tools and softwares: `Python 3.8+` or above version; `Git`; `PostgresDB` in our local.
-#### 3. Create and activate the virtual environment using
+#### 1. Create a public repository on GitHub and Install Prerequisites
+  - Create a repo and clone it to the local.
+  - Install prerequisites
+    - `python 3.8+` or above version
+    - `Git`
+    - `PostgresDB` in our local.
+      
+#### 2. Create and activate the virtual environment using
   
   ```py
    python3 -m venv .venv
    source .venv/bin/activate
   ```
-#### 4. Install the required packages using:
+#### 3. Install the required packages using:
 
   ```sh
-pip install Flask Flask-SQLAlchemy Flask-Migrate psycopg2-binary python-dotenv pytest pytest-flask pytest-dotenv gunicorn
+  pip install Flask Flask-SQLAlchemy Flask-Migrate psycopg2-binary python-dotenv pytest pytest-flask pytest-dotenv gunicorn
   ```
 
-#### 5. verify and freeze the dependencies
+#### 4. verify and freeze the dependencies
+
   ```sh
   pip list
   pip freeze > requirements.txt 
   ```
 
-#### 6. Version Control Filesystem setup: Git
+#### 5. Version Control Filesystem setup: Git
 
   ```sh
   # Initialize git 
@@ -75,7 +81,8 @@ pip install Flask Flask-SQLAlchemy Flask-Migrate psycopg2-binary python-dotenv p
     git push -u origin main
   ```
 
-**7. Create `.gitignore` file to avoild git from tracking files that are not required.**
+#### 6. Create `.gitignore` file 
+  - To avoid git from tracking files that are not required.
 
 ---
 
@@ -236,10 +243,12 @@ pip install Flask Flask-SQLAlchemy Flask-Migrate psycopg2-binary python-dotenv p
 ### V. Common Troubleshooting Issues
 
   - Connection Issues
+    
   ```sh
   # Check if PostgreSQL is listening on correct port
     sudo netstat -tulpn | grep 5432
   ```
+
   - Check PostgreSQL logs
   ```sh
   sudo tail -f /var/log/postgresql/postgresql-*.log
@@ -250,6 +259,7 @@ pip install Flask Flask-SQLAlchemy Flask-Migrate psycopg2-binary python-dotenv p
   GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO student_user;
   GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO student_user;
   ```
+
   - Reset PostgreSQL Password
   ```sql
   -- If you forget the postgres user password:
@@ -275,13 +285,9 @@ pip install Flask Flask-SQLAlchemy Flask-Migrate psycopg2-binary python-dotenv p
 - PostgreSQL running and connected
 - Migrations applied (`flask db upgrade`)
 - Virtual environment activated
-
-**Test data management:**
-- Use unique emails per test.
-- Clean up test data after runs (or use disposable test DB).
 - Consider automated `Postman tests` and a CI job to run them against a staging environment.
 
-**Postman tips:**
+**Postman Testing:**
 - Put requests into a `Collection` and group by `resource`.
 - Use Environment variables (e.g., `base_url`, `student_id`) to make requests portable.
 - Add Tests in Postman to assert `response codes` and `JSON structure`.
@@ -306,14 +312,18 @@ pip install Flask Flask-SQLAlchemy Flask-Migrate psycopg2-binary python-dotenv p
 ## Project local setup using Makefile
 
 **1. Install dependencies**
-  ```txt
-  make install
+  ```sh
+  # using pip 
+    pip install -r requirements.txt
+
+  # or using make install
+    make install
   ```
-  - (or run pip install -r requirements.txt directly)
 
 **2. Run the App**
-  ```txt
-  make run
+  ```sh
+  # using make run
+    make run
   ```
 
 **3. Flask app will start at:**
@@ -327,13 +337,12 @@ pip install Flask Flask-SQLAlchemy Flask-Migrate psycopg2-binary python-dotenv p
     - /students → Manage students
       
 **4. Run all unit tests:**
-  ```txt
-  make test
-  ```
-  Or directly:
+  ```sh
+  # using make test
+    make test
 
-  ```txt
-  pytest -v
+  # or directly
+    pytest -v
   ```
 
 ## Containerising the REST API
