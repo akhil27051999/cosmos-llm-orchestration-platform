@@ -49,18 +49,6 @@ This repository contains a Student CRUD (Create, Read, Update, Delete) REST API 
 pip install Flask Flask-SQLAlchemy Flask-Migrate psycopg2-binary python-dotenv pytest pytest-flask pytest-dotenv gunicorn
   ```
 
-| Package               | Purpose                       | Required For                       |
-|-----------------------|-------------------------------|-------------------------------------|
-| Flask                 | Web framework                 | Core application                    |
-| Flask-SQLAlchemy      | ORM integration               | Database operations                 |
-| Flask-Migrate         | Database migrations           | Schema versioning                   |
-| psycopg2-binary       | PostgreSQL adapter            | PostgreSQL database                 |
-| python-dotenv         | Environment variables         | Configuration management            |
-| pytest                | Testing framework             | Application testing                 |
-| pytest-flask          | Flask test helpers            | Flask-specific testing              |
-| pytest-dotenv         | Test env variables support    | Testing with .env files             |
-| gunicorn              | WSGI server                   | Production deployment               |
-
 #### 5. verify and freeze the dependencies
   ```sh
   pip list
