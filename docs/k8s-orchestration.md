@@ -1,7 +1,5 @@
 # Kubernetes Cluster Deployment Documentation
 
-https://github.com/user-attachments/assets/933054ea-6916-418f-a6e1-1a05f6b3587a
-
 ## Milestone Expectation
 
 ### Problem Statement
