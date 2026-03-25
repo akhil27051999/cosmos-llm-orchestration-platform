@@ -1,7 +1,5 @@
 # REST-API-CI-Pipeline Documentation
 
-https://github.com/user-attachments/assets/da317cb7-d527-492b-b42a-f84b10f7877a
-
 ### Overview
 This GitHub Actions workflow implements a comprehensive CI/CD pipeline for a REST API application. The pipeline automates building, testing, linting, containerization, and deployment of a Flask application using Docker and Helm.
 
