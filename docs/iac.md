@@ -1,7 +1,5 @@
 # Deploy REST API & its dependent services on bare metal documentation
 
-https://github.com/user-attachments/assets/68f69596-99fe-4a12-b172-3a2725c13b37
-
 ## 1. Bootstrap Provisioning Script (provision.sh)
 
 ### Purpose & Role:
