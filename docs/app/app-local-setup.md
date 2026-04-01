@@ -1,252 +1,238 @@
-# Student-REST-API — End-to-End Setup & Run Guide
+# Local Setup & API Testing Guide — Student REST API
 
-Overview
---------
-This document is an end-to-end, step-by-step guide for setting up, running, testing, and maintaining the Student-REST-API Flask project. It is intentionally written as an implementation guide for newcomers (no code is included here because the repository already contains the source). The guide covers environment preparation, dependency installation, database setup (PostgreSQL), migrations, running in development and production, testing, common troubleshooting, and best-practices for maintenance and contribution.
+## Overview
 
-Who this is for
-----------------
-- New contributors who cloned the repository and want to run the project locally.
-- Developers preparing a local or staging environment.
-- DevOps or SRE engineers who want a reference for deployment and troubleshooting.
+This guide covers everything you need to build, set up, and test the Student REST API locally — from environment setup and database configuration to running the server and testing all API endpoints.
 
-Prerequisites
--------------
-Before you start, make sure the following tools are installed on your machine:
-- Python 3.8 or newer
-- pip (Python package installer)
-- git
-- PostgreSQL (server and client tools) — for the production-like local setup
-- Optional: Docker / Docker Compose (if you prefer containerized DB and app)
+---
 
-Local environment variables and secrets will be read from a `.env` file. Do not commit `.env` to version control.
+## Prerequisites
 
-Repository layout (what to expect)
-----------------------------------
-You should see an application package (for example `app/`) with:
-- app factory (creates the Flask app)
-- config module (reads environment variables)
-- models (SQLAlchemy models)
-- routes/blueprints (API endpoints)
-- migrations/ (Flask-Migrate / Alembic artifacts — may be present)
-- requirements.txt
-- README.md (this file)
-- a .env.example or documentation describing expected .env variables (if present)
+- Python 3.8+
+- PostgreSQL running locally on port `5432`
+- Git
 
-Quick start — clone & prepare
------------------------------
-1. Clone the repository:
-   $ git clone <repository-url>
+---
 
-2. Move into the project directory:
-   $ cd <repository-directory>
+## 1. Clone & Setup Virtual Environment
 
-3. Create a Python virtual environment (recommended):
-   $ python3 -m venv .venv
+```sh
+git clone <repository-url>
+cd Flask-REST-API
 
-4. Activate the virtual environment:
-   - On macOS / Linux: $ source .venv/bin/activate
-   - On Windows (PowerShell): $ .venv\Scripts\Activate
+python3 -m venv venv
+source venv/bin/activate
 
-5. Install dependencies:
-   $ pip install -r requirements.txt
+pip install -r requirements.txt
+```
 
-6. Verify installed packages:
-   $ pip list
+---
 
-Environment configuration
--------------------------
-The app reads configuration from environment variables. Create a `.env` file in the repository root (do not commit it). The `.env` file should provide values similar to these (replace placeholders with real secrets):
+## 2. Configure Environment Variables
 
-- FLASK_APP — the app factory entry (for example `app:create_app`)
-- FLASK_ENV — development or production
-- DEBUG — true/false
-- DATABASE_URL — full SQLAlchemy-compatible connection string or supply individual POSTGRES_* variables:
-  - POSTGRES_USER
-  - POSTGRES_PASSWORD
-  - POSTGRES_DB
-  - POSTGRES_HOST
-  - POSTGRES_PORT
+Create a `.env` file at the project root (never commit this):
 
-Important: If your deployment platform provides a single connection URL (for example Heroku, Railway), prefer setting DATABASE_URL.
+```env
+FLASK_ENV=development
+FLASK_APP=app:create_app
+FLASK_DEBUG=1
+DEBUG=True
 
-PostgreSQL: local DB setup
---------------------------
-You have two options: native local installation or Docker.
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres123
+POSTGRES_DB=studentdb
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
 
-A) Native PostgreSQL (Ubuntu / macOS Homebrew):
-- Install PostgreSQL using your package manager.
-- Ensure the service is running and enabled on boot.
-- Create a dedicated DB user and database for the app.
-- Give the app user the necessary privileges for the application DB.
+DATABASE_URL=postgresql://postgres:postgres123@localhost:5432/studentdb
+```
 
-B) Docker (recommended for isolation):
-- Start a Postgres container and map the port; create a database and user via environment variables or a small initialization script.
+> **Note:** Use `localhost` as the host when running outside Docker. Use `postgres` (service name) only inside Docker Compose.
 
-In both options, note the connection string and set it to DATABASE_URL in `.env`.
+---
 
-Database user and DB example values (replace with strong secrets):
-- DB name: studentdb
-- DB user: student_user
-- DB password: <secure-password>
-- Host: localhost (or the Docker container hostname)
-- Port: 5432
+## 3. PostgreSQL Database Setup
 
-Migrations (Flask-Migrate / Alembic)
-------------------------------------
-The project uses Flask-Migrate to manage database schema changes. Basic migration workflow:
+```sh
+# Access PostgreSQL shell
+psql -U postgres -h localhost -W
+```
 
-1. Ensure FLASK_APP is set to your app factory (for local CLI usage).
-2. Initialize migrations directory (only needed once if not already present).
-3. Create migration scripts after model changes (a descriptive message helps).
-4. Apply migrations to the target DB.
+Run inside psql:
 
-Notes:
-- Never delete or reinitialize migrations on production without a careful migration plan (backups, tested rollbacks).
-- For adding non-nullable fields to existing tables, add them as nullable first, backfill values, then alter to non-nullable in a subsequent migration or use server defaults in migration scripts.
+```sql
+CREATE USER postgres WITH PASSWORD 'postgres123';
+CREATE DATABASE studentdb;
+GRANT ALL PRIVILEGES ON DATABASE studentdb TO postgres;
+ALTER DATABASE studentdb OWNER TO postgres;
+\q
+```
 
-Running the application
------------------------
-Development:
-- Use Flask's development server through the app factory. Ensure you are using the virtual environment and environment variables are set.
-- You can enable debug mode via environment variables (only in local development).
+---
 
-Production:
-- Use a production WSGI server (e.g., gunicorn) and configure the process supervisor appropriate for your platform (systemd, Docker, Kubernetes).
-- Ensure environment variables (secrets) are injected securely (secrets manager, environment variables in your hosting platform).
-- Configure logging to a file/system and ensure log rotation is in place for long-running services.
+## 4. Database Migrations
 
-API base path
--------------
-By convention the API is mounted under a base prefix like `/api/students` (the exact prefix is present in the repository’s blueprint registration). Use that prefix for your client requests.
+```sh
+export FLASK_APP=app:create_app
 
-Testing the API
----------------
-- Unit and integration tests are set up using pytest (if the project includes tests). Run tests with:
-  $ pytest
+flask db init                                                      # Run once — creates migrations/ folder
+flask db migrate -m "initial migration - create student table"     # Generate migration script
+flask db upgrade                                                   # Apply migration — creates tables
+```
 
-- For manual testing use curl, HTTPie, Postman, or your preferred REST client against the running server. The project includes a Postman collection and/or test examples in the repository.
+**Verify tables were created:**
 
-Common requests to verify (examples of action, not code):
-- Health/readiness endpoint to confirm server is running.
-- Create a student record (POST).
-- List all student records (GET).
-- Retrieve a student by ID (GET).
-- Update student (PUT/PATCH).
-- Delete student (DELETE).
+```sh
+psql -U postgres -h localhost -d studentdb -W
 
-Troubleshooting & common issues
--------------------------------
-This section lists common errors encountered during setup and how to resolve them.
+\dt                      # Should show alembic_version and students
+SELECT * FROM students;  # Should return empty rows
+\q
+```
 
-1) "Unable to connect to the database" / connection refused
-- Cause: PostgreSQL not running, wrong host/port, firewall or Docker container network issues.
-- Fixes:
-  - Ensure Postgres service is running (or container is up).
-  - Verify host and port: if using Docker, check container hostname or map host port to container.
-  - Verify credentials and database name in `.env`.
-  - Confirm network access (local firewall or Docker network rules).
+**Other useful migration commands:**
 
-2) "OperationalError: could not translate host name" or DNS errors
-- Cause: Using a hostname not resolvable in your environment (common when Docker container name is used as host outside of Docker network).
-- Fixes:
-  - Use `localhost` or the container’s mapped port on the host.
-  - If using Docker Compose, run the app in the same Compose network or use the service name as host.
+```sh
+flask db downgrade    # Rollback last migration
+flask db current      # Show current revision
+flask db history      # Show full migration history
+```
 
-3) "ModuleNotFoundError" or import errors on startup
-- Cause: Virtual environment not activated, missing dependencies, or incorrect PYTHONPATH.
-- Fixes:
-  - Activate the virtual environment.
-  - Install dependencies from requirements.txt.
-  - Check the FLASK_APP or entrypoint configured to ensure it points to the correct app factory.
+---
 
-4) "flask db upgrade" failing or migrations causing errors
-- Cause: Migrations out of sync, model changes conflicting with DB schema, or issues with Alembic environment.
-- Fixes:
-  - Inspect the generated migration script before applying.
-  - If migrations diverged in development, either merge migration revisions or, in development only, reinitialize migrations after dumping data or resetting DB.
-  - For production, avoid rebuilding migrations from scratch; instead create new migrations that reconcile the schema.
+## 5. Seed the Database
 
-5) Duplicate key / Unique constraint violation on create
-- Cause: Attempting to insert a record with a unique field (e.g., email) already existing.
-- Fixes:
-  - Handle conflict responses gracefully in your client.
-  - For testing, use unique data or clean up test records before re-running tests.
+```sh
+python seed.py    # Inserts 100 student records
+```
 
-6) Timeouts / slow queries in production
-- Cause: Missing indexes, large volume of data, improper query patterns, or connection pooling misconfiguration.
-- Fixes:
-  - Add indexes for frequently queried columns.
-  - Use connection pooling (SQLAlchemy supports pooling options).
-  - Monitor slow queries and tune as needed or add caching for read-heavy endpoints.
+---
 
-7) Missing or incorrectly set environment variables
-- Cause: Not loading `.env` in local environment, or CI/host not configured to provide environment variables.
-- Fixes:
-  - Add `.env` locally (do not commit).
-  - For production, set environment variables in the hosting environment (platform-specific).
-  - Confirm the config module reads from the correct variables and has sensible defaults (where appropriate).
+## 6. Run the Flask Server
 
-8) Permissions errors when running scripts or writing logs
-- Cause: File system permissions, log file ownership, or restricted directories.
-- Fixes:
-  - Ensure the process user has write permission to log and temporary directories.
-  - Use configurable log file paths that are writable by the running process.
+```sh
+source venv/bin/activate
+flask run
+```
 
-9) Running tests that depend on DB and failing due to state
-- Cause: Tests assume a fresh DB state.
-- Fixes:
-  - Use a test database configured via environment variables and run migrations before tests.
-  - Consider using transactional tests or test fixtures that roll back DB changes after each test.
+Server starts at: `http://127.0.0.1:5000`
 
-Operational notes for production deployment
--------------------------------------------
-- Use environment-specific configurations (production, staging, development).
-- Do not commit secrets; use a secrets manager.
-- Enforce TLS/SSL for all external traffic.
-- Configure process monitoring/restart (systemd, supervisor, or container orchestration).
-- Configure database backups and verify restore procedures periodically.
-- Restrict database user privileges (principle of least privilege) and use a different user for admin tasks.
-- Run migrations as part of a controlled release process and ensure rolling migrations are safe for production traffic.
+> **macOS Note:** Always use `127.0.0.1` instead of `localhost` in your requests — macOS resolves `localhost` to IPv6 (`::1`) but Flask listens on IPv4 only.
 
-Maintenance & dependency updates
--------------------------------
-- Frequently update and test dependencies in a development branch before promoting to production.
-- After adding new dependencies, update requirements.txt using pip freeze and commit.
-- Run the test suite after dependency upgrades and before deploying.
+---
 
-Contribution workflow
----------------------
-- Fork the repository and work in a feature branch `feat/<short-description>` or `fix/<ticket-number>`.
-- Add tests for any new behavior or to reproduce bugs.
-- Keep commits small and focused, and use descriptive commit messages.
-- Open a pull request with a clear description of the changes and any migration steps required.
+## 7. API Endpoints
 
-Cheat sheet — essential commands
--------------------------------
-Below is a short list of the command-style steps you’ll run while following this guide. Replace placeholders with the repository URL, database credentials, and other environment-specific values.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check |
+| GET | `/students` | Get all students |
+| GET | `/students/<id>` | Get student by ID |
+| POST | `/students` | Add a new student |
+| PUT | `/students/<id>` | Update a student |
+| DELETE | `/students/<id>` | Delete a student |
 
-- Clone repository: git clone <repository-url>
-- Create and activate venv: python3 -m venv .venv  then activate (.venv/bin/activate or .venv\Scripts\Activate)
-- Install deps: pip install -r requirements.txt
-- Set environment variables: create `.env` and populate connection info
-- DB migrations: (initialize if needed, create migration scripts, and apply them)
-- Start app in development: run the Flask development server via the configured FLASK_APP
-- Production run: use gunicorn (or the WSGI server of your choice) and ensure proper environment and logging
+---
 
-Where to get help
------------------
-- Check application logs (console or file) for stack traces and error messages.
-- Confirm environment variables and database connectivity first — most setup problems stem from configuration.
-- If the repository includes an issues tracker, search for similar problems or open a new issue with detailed reproduction steps and logs.
+## 8. Testing with curl
 
-Appendix — key reminders
-------------------------
-- Never commit `.env` or secrets to Git.
-- Prefer strong, unique passwords for DB users and rotate if exposed.
-- Back up the database before applying potentially destructive migrations.
-- Test migrations on a staging or local clone of production data (or a sample dataset) when possible.
+**Health check:**
 
-End of guide
-------------
-This README is intended to be a living document. If anything in the repository changes (paths, blueprint prefixes, migration usage), update this documentation so new contributors have the clearest onboarding path possible.
+```sh
+curl http://127.0.0.1:5000/health
+```
+
+**GET all students:**
+
+```sh
+curl http://127.0.0.1:5000/students
+```
+
+**GET student by ID:**
+
+```sh
+curl http://127.0.0.1:5000/students/1
+```
+
+**POST — Add a student:**
+
+```sh
+curl -X POST http://127.0.0.1:5000/students \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alice Johnson", "domain": "Computer Science", "gpa": 3.8, "email": "alice@university.edu"}'
+```
+
+**PUT — Update a student:**
+
+```sh
+curl -X PUT http://127.0.0.1:5000/students/1 \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Alice Smith", "gpa": 3.9}'
+```
+
+**DELETE — Remove a student:**
+
+```sh
+curl -X DELETE http://127.0.0.1:5000/students/1
+```
+
+---
+
+## 9. Testing with Postman
+
+1. Download and open [Postman](https://www.postman.com/downloads/)
+2. Create a new **Collection** → name it `Student API`
+3. For each request:
+   - Set the HTTP method and URL (use `http://127.0.0.1:5000`)
+   - For POST/PUT: go to **Body** → **raw** → select **JSON**
+4. Save each request inside the collection for reuse
+
+**Common issues:**
+
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| `Connection refused` | Flask server not running | Run `flask run` |
+| `404 Not Found` | Wrong URL prefix | Use `/students`, not `/api/students` |
+| Empty response | `localhost` resolves to IPv6 on macOS | Use `127.0.0.1` instead |
+| `flask: command not found` | Virtual env not activated | Run `source venv/bin/activate` |
+
+---
+
+## 10. Viewing Logs
+
+Logs are auto-created at `student_api.log` in the project root on first app start.
+
+```sh
+# Live log stream (recommended during development)
+tail -f student_api.log
+
+# Last 50 lines
+tail -n 50 student_api.log
+
+# Filter errors only
+grep "ERROR" student_api.log
+
+# Filter by keyword
+grep "students" student_api.log
+```
+
+---
+
+## 11. Quick Reference — Full Command Sequence
+
+```sh
+# One-time setup
+source venv/bin/activate
+export FLASK_APP=app:create_app
+flask db init
+flask db migrate -m "initial migration"
+flask db upgrade
+python seed.py
+
+# Every time
+source venv/bin/activate
+flask run
+
+# In a separate terminal — live logs
+tail -f student_api.log
+```
