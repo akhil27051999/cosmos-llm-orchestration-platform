@@ -48,14 +48,14 @@ A mature stack uses all three. We covered the first two. **Traces** are typicall
                               │
         ┌─────────────────────┼─────────────────────┐
         │                     │                     │
-   ┌─────────┐         ┌──────────┐          ┌──────────┐
-   │Prometheus│────────│Alertmanager│──────►│  Slack   │
-   │  + AM    │         │           │        │ #alerts  │
-   └────▲─────┘         └──────────┘        └──────────┘
+   ┌───────-──┐        ┌───-──────-─┐        ┌──────────┐
+   │Prometheus│────────│Alertmanager│──────► │  Slack   │
+   │  + AM    │        │            │        │ #alerts  │
+   └────▲─────┘        └─────────--─┘        └──────────┘
         │ scrapes
         │
    ┌────┴───────────────────────────────────────┐
-   │                                             │
+   │                                            │
 ┌──┴──────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐
 │Flask App│  │postgres │  │blackbox │  │node/kube│
 │ /metrics│  │exporter │  │exporter │  │ -state  │
