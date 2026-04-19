@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: 'https://github.com/akhil27051999/Flask-REST-API.git'
-    targetRevision: dev
+    targetRevision: main
     path: helm/application
     helm:
       valueFiles:
@@ -19,3 +19,5 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
