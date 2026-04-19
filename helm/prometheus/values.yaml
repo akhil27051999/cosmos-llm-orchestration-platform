@@ -31,43 +31,44 @@ server:
     type: ClusterIP
     servicePort: 9090
 
-  # Custom scrape configs for our app, postgres-exporter, blackbox-exporter
-  extraScrapeConfigs: |
-    - job_name: 'flask-api'
-      kubernetes_sd_configs:
-        - role: pod
-          namespaces:
-            names:
-              - student-api
-      relabel_configs:
-        - source_labels: [__meta_kubernetes_pod_label_app]
-          regex: flask-api
-          action: keep
-        - source_labels: [__meta_kubernetes_pod_container_port_number]
-          regex: "5000"
-          action: keep
-      metrics_path: /metrics
+# Custom scrape configs for our app, postgres-exporter, blackbox-exporter
+# (top-level field, not nested under server)
+extraScrapeConfigs: |
+  - job_name: 'flask-api'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - student-api
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: flask-api
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        regex: "5000"
+        action: keep
+    metrics_path: /metrics
 
-    - job_name: 'postgres-exporter'
-      static_configs:
-        - targets: ['prometheus-postgres-exporter.observability.svc.cluster.local:9187']
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: ['postgres-exporter-prometheus-postgres-exporter.observability.svc.cluster.local:80']
 
-    - job_name: 'blackbox-http'
-      metrics_path: /probe
-      params:
-        module: [http_2xx]
-      static_configs:
-        - targets:
-            - http://flask-api-service.student-api.svc.cluster.local
-            - http://argocd-server.argocd.svc.cluster.local
-            - http://vault-service.vault.svc.cluster.local:8200/v1/sys/health
-      relabel_configs:
-        - source_labels: [__address__]
-          target_label: __param_target
-        - source_labels: [__param_target]
-          target_label: instance
-        - target_label: __address__
-          replacement: prometheus-blackbox-exporter.observability.svc.cluster.local:9115
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://flask-api-service.student-api.svc.cluster.local
+          - http://argocd-server.argocd.svc.cluster.local
+          - http://vault-service.vault.svc.cluster.local:8200/v1/sys/health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter-prometheus-blackbox-exporter.observability.svc.cluster.local:9115
 
 # Alertmanager bundled with this chart
 alertmanager:

@@ -65,3 +65,17 @@ externalSecrets:
       - secretKey: "POSTGRES_PASSWORD"
         vaultKey: "studentdb"
         vaultProperty: "POSTGRES_PASSWORD"
+
+  - name: postgres-secret-observability
+    namespace: observability
+    refreshInterval: "1h"
+    targetSecret: postgres-secret
+    creationPolicy: Owner
+    secretStore: vault-backend
+    data:
+      - secretKey: "POSTGRES_USER"
+        vaultKey: "studentdb"
+        vaultProperty: "POSTGRES_USER"
+      - secretKey: "POSTGRES_PASSWORD"
+        vaultKey: "studentdb"
+        vaultProperty: "POSTGRES_PASSWORD"
