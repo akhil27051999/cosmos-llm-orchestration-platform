@@ -1,6 +1,7 @@
 from flask import Flask, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from prometheus_flask_exporter import PrometheusMetrics
 from .logger import setup_logger
 
 db = SQLAlchemy()
@@ -21,6 +22,10 @@ def create_app(config_class=None):
     app.logger.handlers = student_logger.handlers[:]
     app.logger.setLevel(student_logger.level)
     app.logger.propagate = False  # Prevent double logging
+
+    # Prometheus metrics — exposes /metrics endpoint
+    metrics = PrometheusMetrics(app)
+    metrics.info('flask_app_info', 'Flask App Info', version='1.0.0')
 
     app.logger.info("Student Management API started successfully.")
 
