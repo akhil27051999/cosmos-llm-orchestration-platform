@@ -1,5 +1,9 @@
 # ignore virtual env files into git
 /venv/*
+app/venv/
+
+# ignore self-hosted GitHub Actions runner
+actions-runner/
 
 # ignore environment variable files
 .env

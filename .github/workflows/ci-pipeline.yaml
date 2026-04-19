@@ -26,19 +26,17 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
-
       - name: Install Dependencies
         run: |
           cd app
-          python3 -m pip install --upgrade pip
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Run Tests with SQLite
         run: |
+          source app/venv/bin/activate
           pytest -v
 
       - name: Build Docker Image
