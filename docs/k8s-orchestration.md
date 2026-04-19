@@ -1,2130 +1,1308 @@
-# Kubernetes Cluster Deployment Documentation
+# Module 5: Kubernetes Orchestration
 
-## Milestone Expectation
+> **Goal:** Deploy the entire stack — Vault, External Secrets Operator, Postgres, Flask — onto a 3-node minikube cluster that mimics a production multi-AZ topology.
 
-### Problem Statement
-- We need to spin up a three-node Kubernetes cluster using Minikube on your local. Going forward we will treat this Kubernetes cluster as our production cluster.
-- Out of these three nodes
-  - Node A will be used by our application.
-  - Node B will be used for running database.
-  - Node C will be used for running our dependent service such as observability stack, vault for storing secrets, etc.
+> **Why this matters:** Kubernetes is the de-facto orchestrator for cloud-native workloads. For a 3-5 yr SRE/DevOps role, you must understand the **why** behind every K8s primitive — networking, storage, scheduling, secrets, rollouts. This is the single longest module because K8s is the single most-asked topic in interviews.
 
-### Expectations
-The following expectations should be met to complete this milestone.
-- Three node Kubernetes cluster using Minikube should be spun up.
-- Appropriate node labels should be added to these three nodes.
-- Ex:
-  - Node A: type=application
-  - Node B: type=database
-  - Node C: type=dependent_services
+---
 
-## Objective
-Deploy a production-ready 3-node Kubernetes cluster using Minikube with specialized node roles for application segregation.
+## Table of Contents
 
-### Implementation Summary
+1. [Architecture](#architecture)
+2. [Why 3 Nodes with Labels](#why-3-nodes-with-labels)
+3. [Cluster Setup](#cluster-setup)
+4. [Vault Deployment](#vault-deployment)
+5. [External Secrets Operator (ESO)](#external-secrets-operator-eso)
+6. [Database (Postgres)](#database-postgres)
+7. [Application (Flask)](#application-flask)
+8. [Deep Concepts](#deep-concepts)
+   - [Networking & CoreDNS](#networking--coredns)
+   - [Storage — PV, PVC, StorageClass](#storage--pv-pvc-storageclass)
+   - [Workloads — Deployment vs StatefulSet vs DaemonSet](#workloads--deployment-vs-statefulset-vs-daemonset)
+   - [Probes — Liveness, Readiness, Startup](#probes--liveness-readiness-startup)
+   - [Rollouts & Rollbacks](#rollouts--rollbacks)
+   - [Autoscaling — HPA, VPA, Cluster Autoscaler](#autoscaling--hpa-vpa-cluster-autoscaler)
+   - [NetworkPolicies](#networkpolicies)
+   - [RBAC](#rbac)
+   - [Operators & CRDs](#operators--crds)
+9. [Commands Reference](#commands-reference)
+10. [Troubleshooting](#troubleshooting)
+11. [Interview Q&A](#interview-qa)
+12. [STAR Stories](#star-stories)
+13. [Production Hardening](#production-hardening)
+14. [Cloud Mapping](#cloud-mapping)
 
-#### Cluster Architecture
+---
 
-| **Node Name**    | **Role**      | **Labels**                | **Purpose**                                    |
-| ---------------- | ------------- | ------------------------- | ---------------------------------------------- |
-| **minikube**     | Control Plane | `type=application`        | Hosts main application workloads               |
-| **minikube-m02** | Worker        | `type=database`           | Dedicated to database services                 |
-| **minikube-m03** | Worker        | `type=dependent_services` | Runs monitoring, secrets, and support services |
+## Architecture
 
+```
+                        Three-Node Minikube Cluster
+                        (mimics multi-AZ K8s in cloud)
 
-### Resource Allocation
-- CPU: 4 cores per node
-- Memory: 15.4GB per node
-- Storage: 47GB per node
-- File Descriptors: 1,048,576 per container
+┌─────────────────────────────────────────────────────────────────────┐
+│                                                                       │
+│  Node: minikube           Node: minikube-m02       Node: minikube-m03 │
+│  Label: type=application  Label: type=database     Label: type=        │
+│  (Control plane)          (Worker)                  dependent_services │
+│                                                     (Worker)           │
+│  ┌──────────────────┐    ┌──────────────────┐    ┌─────────────────┐ │
+│  │ flask-api        │    │ postgres         │    │ vault           │ │
+│  │ (3 replicas)     │    │ (single replica) │    │ (single replica)│ │
+│  │ student-api ns   │    │ student-api ns   │    │ vault ns        │ │
+│  └──────────────────┘    └──────────────────┘    │                 │ │
+│                                                   │ external-secrets│ │
+│                                                   │ -operator       │ │
+│                                                   │ external-secrets│ │
+│                                                   │ ns              │ │
+│                                                   └─────────────────┘ │
+│                                                                       │
+└───────────────────────────────────────────────────────────────────────┘
 
-## Technical Implementation
-
-### 1. Cluster Creation
-```bash
-minikube start --memory=4096 --cpus=2 --disk-size=20g --driver=docker --nodes=3
+Data flow:
+  flask-api ◄── postgres-secret (synced from Vault by ESO)
+  flask-api ──► postgres (over cluster DNS)
+  ESO ──► vault-service (over cluster DNS, cross-namespace)
 ```
 
-#### Configuration Breakdown:
-- Driver: Docker (container-based nodes)
-- Nodes: 3-node cluster (1 control plane + 2 workers)
-- Resources: Balanced allocation for development/production parity
+**Workload-to-node placement** (via `nodeSelector`):
 
-### 2. Node Labeling Strategy
-```bash
-kubectl label node minikube type=application
-kubectl label node minikube-m02 type=database
-kubectl label node minikube-m03 type=dependent_services
-```
+| Pod | Lands on | Why |
+|-----|----------|-----|
+| Flask API | `type=application` (minikube) | App workloads isolated to "app tier" |
+| Postgres | `type=database` (minikube-m02) | DB on dedicated node — no noisy neighbors |
+| Vault, ESO | `type=dependent_services` (minikube-m03) | Infra/security tools separate from app & DB |
 
-#### Label Purpose:
-- Application Node: Web services, APIs, microservices
-- Database Node: PostgreSQL, Redis, persistent data stores
-- Dependent Services: Monitoring, logging, secrets management
+---
 
-### 3. System Verification
-Health Checks Performed:
-- All 3 nodes running (Control Plane + 2 Workers)
-- 12/12 system pods healthy across all namespaces
-- Network components (kube-proxy, CoreDNS) operational
-- Resource allocation properly configured
-- File descriptor limits optimized (1M per container)
+## Why 3 Nodes with Labels
 
-## Critical Configuration Details
+This mimics a real production setup where:
+- **Application nodes** auto-scale based on traffic
+- **Database nodes** are large, stable, and rarely restart (different SLAs)
+- **Dependent services** (Vault, monitoring, secrets) run on infra-tier nodes
 
-### File Descriptor Management
+Labels + nodeSelectors enforce the placement. In cloud, you'd use **node groups** (EKS) or **node pools** (GKE) with the same labels.
 
-#### Issue Identified & Resolved:
-- Problem: Container FD limit initially showed 1024 (misleading shell limit)
-- Root Cause: Shell ulimit command doesn't reflect actual container limits
-- Solution: Verified via /proc/1/limits showing 1,048,576 FDs
-- Current Usage: 3,424 FDs (0.3% utilization) - Healthy
+---
 
-#### Network Configuration
-- CNI: Kindnet (Container Network Interface)
-- Service Proxy: kube-proxy running on all nodes
-- DNS: CoreDNS operational for service discovery
-- Network Policies: Ready for application-specific rules
-
-#### Storage Provisioning
-- Default StorageClass: Enabled
-- Dynamic Provisioning: Available via storage-provisioner
-- Volume Support: Ready for persistent volume claims
-
-#### Capacity Planning & Scaling
-
-| **Resource**         | **Utilization** | **Capacity**  | **Status**      |
-| -------------------- | --------------- | ------------- | --------------- |
-| **CPU**              | ~5%             | 4 cores/node  | ✅ Underutilized |
-| **Memory**           | ~10%            | 15.4 GB/node  | ✅ Healthy       |
-| **Storage**          | ~10%            | 47 GB/node    | ✅ Ample         |
-| **File Descriptors** | 0.3%            | 1 M/container | ✅ Optimized     |
-
-#### Estimated Workload Capacity
-
-| **Workload Type**    | **Capacity/Node** | **Total Cluster** |
-| -------------------- | ----------------- | ----------------- |
-| **Microservices**    | 50–100 pods       | 150–300 pods      |
-| **Databases**        | 2–3 instances     | 6–9 instances     |
-| **Monitoring Stack** | 10–15 pods        | 30–45 pods        |
-
-## Troubleshooting & Monitoring
-
-### Essential Health Checks
-```bash
-# Cluster status
-minikube status
-kubectl get nodes -o wide
-
-# System pods health
-kubectl get pods -A --sort-by=.metadata.namespace
-
-# Resource utilization
-kubectl top nodes
-kubectl describe nodes | grep -A 5 "Allocatable"
-```
-
-### Common Issue Resolution
-
-#### 1. "Too many open files"
-- Verify: kubectl exec <pod> -- cat /proc/1/limits | grep "Max open files"
-- Expected: 1048576
-
-#### 2. Pod scheduling failures
-- Check: kubectl describe node | grep -A 10 "Allocated resources"
-- Verify node labels and resource requests
-
-#### 3. Network connectivity issues
-- Verify kube-proxy: kubectl get pods -n kube-system -l k8s-app=kube-proxy
-- Check CoreDNS: kubectl get pods -n kube-system -l k8s-app=kube-dns
-
-## Application Deployment Ready
-
-### Node Affinity Examples
-```yaml
-# Database deployment to database node
-affinity:
-  nodeAffinity:
-    requiredDuringSchedulingIgnoredDuringExecution:
-      nodeSelectorTerms:
-      - matchExpressions:
-        - key: type
-          operator: In
-          values:
-          - database
-
-# Application deployment to application node  
-affinity:
-  nodeAffinity:
-    requiredDuringSchedulingIgnoredDuringExecution:
-      nodeSelectorTerms:
-      - matchExpressions:
-        - key: type
-          operator: In
-          values:
-          - application
-```
-
-### Namespace Strategy
-- Development: Application testing
-- Production: Live workloads
-- Monitoring: Observability stack
-- Database: Persistent data services
-
-###  Final Status & Next Steps
-#### Current Cluster State
-- Infrastructure: 3-node cluster operational
-- Networking: All components healthy
-- Storage: Dynamic provisioning enabled
-- Security: RBAC ready for policy implementation
-- Monitoring: Ready for observability stack deployment
-
-### Ready for Application Deployment
-**The cluster is now prepared for:**
-- Database Deployment → type=database node
-- Application Services → type=application node
-- Supporting Services → type=dependent_services node
-- Load Balancing → Ingress controller setup
-- Monitoring → Prometheus/Grafana deployment
-
-### Production Considerations
-- Implement proper resource requests/limits
-- Configure liveness/readiness probes
-- Set up automated backups for database node
-- Implement network policies for service isolation
-- Configure monitoring and alerting
-
-# HashiCorp Vault on Kubernetes - Documentation
-
-### Overview
-
-#### Purpose
-Deploy HashiCorp Vault as a secure secrets management solution on Kubernetes, specifically targeting the dependent_services node for isolation and persistence.
-
-#### Key Features
-- Persistent storage using Kubernetes PVC
-- Secure non-root container execution
-- Proper node segregation on minikube-m03
-- External Secrets Operator integration ready
-- Development and production-ready configuration
-
-### Architecture
-
-#### Component Diagram
-```txt
-┌─────────────────┐     ┌──────────────────┐    ┌────────────────────┐
-│   Application   │     │   External       │    │   HashiCorp Vault  │
-│     Pods        │───▶│   Secrets        │───▶│   (minikube-m03)   │
-│                 │     │   Operator       │    │                    │
-└─────────────────┘     └──────────────────┘    └────────────────────┘
-         │                       │                        │
-         └───────────────────────┼────────────────────────┘
-                                 │
-                          ┌──────────────┐
-                          │ Kubernetes   │
-                          │   Secrets    │
-                          └──────────────┘
-```
-### Node Placement Strategy
-
-| **Component**    | **Node**     | **Label**                 | **Purpose**                   |
-| ---------------- | ------------ | ------------------------- | ----------------------------- |
-| **Vault**        | minikube-m03 | `type=dependent_services` | Secrets management & security |
-| **Applications** | minikube     | `type=application`        | Business logic services       |
-| **Database**     | minikube-m02 | `type=database`           | Persistent data storage       |
+## Cluster Setup
 
 ### Prerequisites
 
-#### System Requirements
-- 3-node Minikube cluster running
-- kubectl configured and accessible
-- StorageClass standard available
-- Node labels properly applied
+| Tool | Install (macOS) | Why |
+|------|-----------------|-----|
+| `minikube` | `brew install minikube` | Local K8s cluster |
+| `kubectl` | `brew install kubectl` | K8s CLI |
+| `helm` | `brew install helm` | Package manager (used in Module 6) |
+| `k9s` (optional) | `brew install k9s` | Terminal UI for K8s |
 
-### Cluster Verification
-
-```bash
-# Verify cluster nodes
-kubectl get nodes --show-labels
-
-# Verify storage class
-kubectl get storageclass
-
-# Verify node resources
-kubectl describe node minikube-m03
-```
-
-## Installation Steps
-
-### 1. Vault Deployment Manifest
-The deployment uses a comprehensive YAML configuration including:
-
-**Components Created:**
-
-- Namespace: vault for isolation
-- PersistentVolumeClaim: 0.5Gi storage
-- ConfigMap: Vault server configuration
-- ServiceAccount: For Kubernetes auth
-- Service: ClusterIP for internal access
-- Deployment: Vault server with init containers
-
-### 2. Deployment Execution
+### Create the 3-node cluster
 
 ```bash
-# Apply the Vault configuration
-kubectl apply -f vault.yaml
-
-# Verify all components
-kubectl get all -n vault
-kubectl get pvc -n vault
+minikube start --nodes=3 --driver=docker --cpus=2 --memory=2048
+kubectl get nodes
 ```
 
-### 3. Expected Output
-```bash
-NAMESPACE     NAME                         READY   STATUS    RESTARTS   AGE
-vault         pod/vault-xxxxxxxxxx-xxxxx   1/1     Running   0          2m
-
-NAMESPACE     NAME                    TYPE        CLUSTER-IP      PORT(S)    AGE
-vault         service/vault-service   ClusterIP   10.96.xxx.xxx   8200/TCP   2m
-
-NAMESPACE     NAME                    READY   UP-TO-DATE   AVAILABLE   AGE
-vault         deployment.apps/vault   1/1     1            1           2m
-
-NAMESPACE     NAME                              STATUS   VOLUME   CAPACITY
-vault         persistentvolumeclaim/vault-pvc   Bound    pvc-xxx  512Mi
+You should see:
+```
+NAME           STATUS   ROLES           AGE   VERSION
+minikube       Ready    control-plane   1m    v1.35.1
+minikube-m02   Ready    <none>          50s   v1.35.1
+minikube-m03   Ready    <none>          40s   v1.35.1
 ```
 
-## Configuration Details
-
-### Vault Server Configuration (vault.hcl)
-
-```hcl
-ui = true
-disable_mlock = true
-
-storage "file" {
-  path = "/vault/data"
-}
-
-listener "tcp" {
-  address = "0.0.0.0:8200"
-  tls_disable = 1
-}
-
-api_addr = "http://vault-service.vault.svc.cluster.local:8200"
-cluster_addr = "https://vault-service.vault.svc.cluster.local:8201"
-```
-
-#### Key Configuration Parameters
-
-| **Parameter**     | **Value**              | **Purpose**                                      |
-| ----------------- | ---------------------- | ------------------------------------------------ |
-| **disable_mlock** | `true`                 | Required in containerized environments           |
-| **storage**       | `file`                 | Uses filesystem with persistent volume           |
-| **path**          | `/vault/data`          | Data persistence location                        |
-| **tls_disable**   | `1`                    | HTTP for development (enable TLS for production) |
-| **api_addr**      | *Internal service DNS* | For cluster communication                        |
-
-### Security Context
-```yaml
-securityContext:
-  runAsUser: 100      # Non-root user
-  runAsGroup: 1000    # Specific GID
-  fsGroup: 1000       # Filesystem group
-```
-
-### Init Container for permission
-
-```yaml
-initContainers:
-- name: init-permissions
-  image: busybox
-  command: ['sh', '-c', 'mkdir -p /vault/data && chown 100:1000 /vault/data && chmod 755 /vault/data']
-  securityContext:
-    runAsUser: 0      # Run as root for permission setup
-```
-
-## Initialization & Unsealing
-
-### 1. Vault Initialization
-```bash
-# Access Vault pod
-kubectl exec -n vault -it deployment/vault -- /bin/sh
-
-# Initialize Vault
-vault operator init
-```
-
-#### Expected Output (SAVE SECURELY):
-
-```text
-Unseal Key 1: WcZ+hG6vGm9AjCa5NBtLQoe+xy+RVUG2wYsnSVFA8lPn
-Unseal Key 2: mAqSlqkAJLTCChz5Izp2KYyLaBT2WzkChCy+11Y9OTmb
-Unseal Key 3: YC8pqKprCwTIhCbQbxWtwmw0WN/Txm+ucovHhA9TKbKj
-Unseal Key 4: 8p/7Ctq8bOi7/RpvYPz0HvY8VfRh31meif5Wrr5gKyha
-Unseal Key 5: 7uoJjqttvrrqihN7tuckOTUlbgQXqtrxj/qndKlsQwtX
-
-Initial Root Token: hvs.nWprgl3SPpwRLKPhCsJThohS
-Vault initialized with 5 key shares and a key threshold of 3.
-```
-
-### 2. Unsealing Process
-```bash
-# Unseal with 3 keys
-vault operator unseal <Unseal Key 1>
-vault operator unseal <Unseal Key 2>  
-vault operator unseal <Unseal Key 3>
-
-# Verify status
-vault status
-```
-
-#### Successful Status:
-
-```text
-Key             Value
----             -----
-Seal Type       shamir
-Initialized     true
-Sealed          false
-Total Shares    5
-Threshold       3
-Version         1.15.0
-```
-
-### 3. Authentication
-```bash
-# Login with root token
-vault login hvs.nWprgl3SPpwRLKPhCsJThohS
-```
-
-## Secret Management
-### 1. Enable KV Secrets Engine
-```bash
-# Enable KV v2 at secret/ path
-vault secrets enable -path=secret kv-v2
-```
-### 2. Basic Secret Operations
-```bash
-# Create/Update secret
-vault kv put secret/studentdb \
-  POSTGRES_USER=postgres \
-  POSTGRES_PASSWORD=postgres123 \
-  POSTGRES_DB=studentdb
-
-# Read secret
-vault kv get secret/studentdb
-
-# Read specific field
-vault kv get -field=POSTGRES_PASSWORD secret/studentdb
-
-# List secrets
-vault kv list secret/
-
-# Delete secret (soft delete)
-vault kv delete secret/studentdb
-
-# Undelete secret
-vault kv undelete -versions=1 secret/studentdb
-
-# Destroy secret (permanent)
-vault kv destroy -versions=1 secret/studentdb
-```
-
-### 3. Policy Management
-```bash
-# Create policy file
-cat > /tmp/studentdb-policy.hcl << EOF
-path "secret/data/studentdb" {
-  capabilities = ["read"]
-}
-
-path "secret/data/studentdb/*" {
-  capabilities = ["read"]
-}
-EOF
-
-# Apply policy
-vault policy write studentdb-policy /tmp/studentdb-policy.hcl
-
-# Create token with policy
-vault token create -policy=studentdb-policy -period=24h
-```
-
-## Access Methods
-
-### 1. Direct Pod Access
-```bash
-# Access Vault container
-kubectl exec -n vault -it deployment/vault -- /bin/sh
-
-# Set environment
-export VAULT_ADDR='http://127.0.0.1:8200'
-vault login <token>
-```
-
-### 2. Port Forwarding (Recommended)
-```bash
-# Terminal 1: Port forward
-kubectl port-forward -n vault deployment/vault 8200:8200
-
-# Terminal 2: Local access
-export VAULT_ADDR='http://localhost:8200'
-export VAULT_TOKEN='hvs.nWprgl3SPpwRLKPhCsJThohS'
-vault status
-vault kv get secret/studentdb
-```
-
-### 3. API Access via curl
-```bash
-# With port-forward running
-curl -s \
-  -H "X-Vault-Token: $VAULT_TOKEN" \
-  http://localhost:8200/v1/secret/data/studentdb | jq
-
-# Response structure:
-{
-  "data": {
-    "data": {
-      "POSTGRES_PASSWORD": "postgres123",
-      "POSTGRES_USER": "postgres"
-    },
-    "metadata": {
-      "created_time": "2025-10-15T14:13:00.60060261Z",
-      "version": 1
-    }
-  }
-}
-```
-
-### 4. Kubernetes Authentication (Advanced)
-```bash
-# Enable Kubernetes auth method
-vault auth enable kubernetes
-
-# Configure with Kubernetes API info
-vault write auth/kubernetes/config \
-  kubernetes_host="https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT" \
-  token_reviewer_jwt="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
-  kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-
-# Create role for applications
-vault write auth/kubernetes/role/myapp \
-  bound_service_account_names=default \
-  bound_service_account_namespaces=default \
-  policies=studentdb-policy \
-  ttl=1h
-```
-
-## External Secrets Integration
-
-### 1. Create ESO Policy
-```bash
-# Policy for External Secrets Operator
-cat > /tmp/eso-policy.hcl << EOF
-path "secret/data/studentdb" {
-  capabilities = ["read"]
-}
-EOF
-
-vault policy write eso-policy /tmp/eso-policy.hcl
-```
-### 2. Generate ESO Token
-```bash
-# Create orphan token with policy
-vault token create -policy=eso-policy -period=24h -orphan -format=json
-```
-
-### 3. Store Token as Kubernetes Secret
-```bash
-# Create namespace for ESO
-kubectl create ns external-secrets
-
-# Create secret with Vault token
-kubectl create secret generic vault-token \
-  --from-literal=token=hvs.CAESIHGbl96lzeJ0GdqYQEWYaZ4hLNS0_fyQRhXfXr3_2GAjGh4KHGh2cy5nRVkDRTdHNFdqVWxXZUZwSEM0TXE \
-  -n external-secrets
-```
-
-### 4. ExternalSecret Resource Example
-```yaml
-apiVersion: external-secrets.io/v1beta1
-kind: ExternalSecret
-metadata:
-  name: studentdb-secret
-  namespace: default
-spec:
-  refreshInterval: 1h
-  secretStoreRef:
-    name: vault-backend
-    kind: SecretStore
-  target:
-    name: studentdb-credentials
-  data:
-  - secretKey: POSTGRES_USER
-    remoteRef:
-      key: secret/studentdb
-      property: POSTGRES_USER
-  - secretKey: POSTGRES_PASSWORD
-    remoteRef:
-      key: secret/studentdb
-      property: POSTGRES_PASSWORD
-```
-
-## Persistence & Backup
-
-### Data Persistence
-- Storage: 512Mi PVC using standard StorageClass
-- Location: /vault/data inside container
-- Node Affinity: Always scheduled on minikube-m03
-
-### Backup Procedures
-```bash
-# Manual backup from node
-minikube ssh -n minikube-m03
-sudo tar -czf /tmp/vault-backup-$(date +%Y%m%d).tar.gz /tmp/hostpath-provisioner/vault/vault-data/
-
-# Copy backup to host
-minikube cp minikube-m03:/tmp/vault-backup-20241015.tar.gz ./vault-backup.tar.gz
-```
-
-### Restart/Recovery Procedure
+### Label the nodes
 
 ```bash
-# After cluster restart
-minikube start
+kubectl label node minikube       type=application --overwrite
+kubectl label node minikube-m02   type=database --overwrite
+kubectl label node minikube-m03   type=dependent_services --overwrite
 
-# Verify Vault pod
-kubectl get pods -n vault
+kubectl get nodes --show-labels | grep type=
+```
 
-# Unseal Vault (required after restart)
+---
+
+## Vault Deployment
+
+### What is Vault?
+
+A secrets management server. Provides:
+- **Encryption-at-rest** for secrets (vs plaintext base64 in K8s Secrets)
+- **Dynamic secrets** (generates DB creds on-demand)
+- **Audit log** of every secret access
+- **Fine-grained policies** (read-only, time-bound, scoped)
+
+### Deploy
+
+```bash
+kubectl apply -f k8s/vault.yaml
+kubectl wait --for=condition=ready pod -l app=vault -n vault --timeout=180s
+```
+
+The pod runs but reports **NotReady** because Vault always starts **sealed**.
+
+### Initialize
+
+```bash
+kubectl exec -n vault -it deployment/vault -- vault operator init
+```
+
+Output:
+```
+Unseal Key 1: ...
+Unseal Key 2: ...
+Unseal Key 3: ...
+Unseal Key 4: ...
+Unseal Key 5: ...
+Initial Root Token: hvs.xxxxxxxxxx
+```
+
+**SAVE THESE.** Without 3 of 5 unseal keys, the data in Vault is permanently lost. Vault uses **Shamir's Secret Sharing** — split into 5, need 3 to reconstruct.
+
+### Unseal (3 of 5 keys)
+
+```bash
 kubectl exec -n vault -it deployment/vault -- vault operator unseal <key1>
 kubectl exec -n vault -it deployment/vault -- vault operator unseal <key2>
 kubectl exec -n vault -it deployment/vault -- vault operator unseal <key3>
 
-# Authenticate and verify
-kubectl exec -n vault -it deployment/vault -- vault login <root-token>
-kubectl exec -n vault -it deployment/vault -- vault kv get secret/studentdb
+kubectl exec -n vault -it deployment/vault -- vault status
+# Should show: Sealed: false
 ```
 
-## Troubleshooting
-
-### Common Issues & Solutions
-
-#### 1. Vault Pod Not Starting
-```bash
-# Check pod status
-kubectl describe pod -n vault vault-xxxxx
-
-# Check logs
-kubectl logs -n vault deployment/vault
-
-# Check init container logs
-kubectl logs -n vault vault-xxxxx -c init-permissions
-```
-
-
-#### 2. Permission Denied Errors
-```bash
-# Fix permissions on hostPath
-minikube ssh -n minikube-m03
-sudo chown -R 100:1000 /tmp/hostpath-provisioner/vault/vault-data/
-sudo chmod 755 /tmp/hostpath-provisioner/vault/vault-data/
-```
-
-#### 3. Vault Sealed State
-```bash
-# Check status
-vault status
-
-# If sealed, unseal with 3 keys
-vault operator unseal <key1>
-vault operator unseal <key2>
-vault operator unseal <key3>
-```
-
-#### 4. Authentication Issues
-```bash
-# Always authenticate first
-vault login <token>
-
-# Check token validity
-vault token lookup
-
-# List policies
-vault policy list
-```
-
-#### 5. KV Engine Not Enabled
+### Login & Store Secrets
 
 ```bash
-# Enable KV v2 if not present
-vault secrets enable -path=secret kv-v2
-
-# Verify secrets engines
-vault secrets list
+kubectl exec -n vault -it deployment/vault -- sh -c '
+vault login <root-token> &&
+vault secrets enable -path=secret kv-v2 &&
+vault kv put secret/studentdb \
+  POSTGRES_USER=postgres \
+  POSTGRES_PASSWORD=postgres123 \
+  POSTGRES_DB=studentdb
+'
 ```
 
-### Diagnostic Commands
-```bash
-# Comprehensive status check
-kubectl get all,pvc,configmap -n vault
+**Why KV-v2?** Versioned secrets — every update creates a new version, can roll back, soft-delete with `vault kv delete` (data still recoverable).
 
-# Check node assignment
-kubectl get pods -n vault -o wide
+### Why Vault Restarts Mean Re-Unsealing
 
-# Check resource usage
-kubectl top pod -n vault
+Vault stores secrets encrypted with a **master key** held in memory (never on disk). On restart, the master key is gone — must reconstruct from unseal keys. **Production:** auto-unseal with cloud KMS (AWS KMS / GCP KMS / Azure Key Vault) so this is automatic.
 
-# Check events
-kubectl get events -n vault --sort-by=.lastTimestamp
-```
+---
 
-## Security Considerations
+## External Secrets Operator (ESO)
 
-### Current Security Posture
+### What problem does it solve?
 
-| **Aspect**             | **Status**    | **Notes**             |
-| ---------------------- | ------------- | --------------------- |
-| **RunAsNonRoot**       | ✅ Implemented | UID 100               |
-| **Persistent Storage** | ✅ Encrypted   | Filesystem encryption |
-| **Network Exposure**   | ✅ ClusterIP   | Internal only         |
-| **Authentication**     | ✅ Token-based | Root + policies       |
-| **Unsealing**          | ✅ Manual      | 3-of-5 threshold      |
+K8s native Secrets are:
+- **Base64-encoded, not encrypted** (visible to anyone with `kubectl get secret`)
+- **Stored in etcd** (compromise of etcd = all secrets exposed)
+- **No rotation** built-in
+- **No audit trail** of access
 
-
-### Production Enhancements Needed
-#### 1. Enable TLS
-```hcl
-listener "tcp" {
-  address = "0.0.0.0:8200"
-  tls_cert_file = "/vault/tls/tls.crt"
-  tls_key_file = "/vault/tls/tls.key"
-  tls_min_version = "tls12"
-}
-```
-
-#### 2. Auto-unseal with Cloud KMS
-```hcl
-seal "awskms" {
-  region     = "us-east-1"
-  kms_key_id = "key-id"
-}
-```
-
-#### 3. Audit Logging
-```hcl
-audit "file" {
-  path = "/vault/logs/audit.log"
-  log_raw = true
-}
-```
-
-#### 4. Network Policies
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: vault-ingress
-  namespace: vault
-spec:
-  podSelector:
-    matchLabels:
-      app: vault
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          name: external-secrets
-    ports:
-    - protocol: TCP
-      port: 8200
-```
-
-### Key Management Best Practices
-
-#### CRITICAL: Secure Storage Required For:
-- 5 Unseal Keys (need 3 to unseal)
-- Root Token
-- Application-specific tokens
-- Backup encryption keys
-
-#### Recommended:
-- Use secure secret management for the unseal keys
-- Implement key rotation policies
-- Use separate tokens for different applications
-- Monitor token usage and expiration
-
-## Maintenance Procedures
-
-### Regular Maintenance Tasks
-#### 1. Storage Monitoring
-```bash
-# Check storage usage
-kubectl exec -n vault deployment/vault -- df -h /vault/data
-
-# Check PVC status
-kubectl get pvc -n vault
-```
-
-#### 2. Token Rotation
-```bash
-# Create new tokens with expiration
-vault token create -policy=app-policy -period=24h -renewable=true
-
-# Revoke old tokens
-vault token revoke <token>
-```
-#### 3. Backup Verification
-```bash
-# Regular backup testing
-minikube ssh -n minikube-m03 -- \
-  "sudo tar -tzf /tmp/vault-backup-latest.tar.gz | head -10"
-
-# Test restore procedure in non-production
-```
-
-#### 4. Log Monitoring
-```bash
-# Check for errors
-kubectl logs -n vault deployment/vault --tail=50 | grep -i error
-
-# Monitor audit logs (when enabled)
-kubectl exec -n vault deployment/vault -- tail -f /vault/logs/audit.log
-```
-
-### Scaling Considerations
-
-#### For Production Deployment:
-- High Availability: Deploy 3+ Vault instances with integrated storage
-- Cloud Integration: Use cloud KMS for auto-unseal
-- Monitoring: Implement Prometheus metrics and alerting
-- Disaster Recovery: Regular snapshots and cross-region replication
-- Performance: Tune resource limits based on load
-
-#### Resource Recommendations:
-```yaml
-resources:
-  requests:
-    memory: "256Mi"
-    cpu: "100m"
-  limits:
-    memory: "1Gi" 
-    cpu: "500m"
-```
-
-### Verification Checklist
-
-#### Post-Installation Verification
-- Vault pod running in vault namespace
-- Persistent volume bound and mounted
-- Vault initialized and unsealed
-- KV v2 secrets engine enabled at secret/
-- Sample secret created and readable
-- Policies created for application access
-- External Secrets token generated
-- Port forwarding working correctly
-- API access functional
-
-#### Integration Testing
-- Application can retrieve secrets via External Secrets
-- Secrets update propagation working
-- Backup/restore procedure tested
-- Unsealing process documented and tested
-- Security policies enforced
-
-
-# External Secrets Operator with Vault - Documentation
-
-## Overview
-### Purpose
-External Secrets Operator (ESO) automates the synchronization of secrets from external secret management systems (like HashiCorp Vault) into Kubernetes Secrets. This provides a secure, automated pipeline for secret management in Kubernetes.
-
-### Key Benefits
-- Centralized Secret Management: Single source of truth in Vault
-- Automatic Synchronization: Secrets automatically sync to Kubernetes
-- Security: No hardcoded credentials in Kubernetes manifests
-- Audit Trail: All secret access tracked through Vault
-- Dynamic Updates: Secrets update automatically when changed in Vault
+Vault solves all that — but apps would need a **Vault SDK** to fetch secrets. ESO bridges the gap: apps still use native K8s Secrets, ESO syncs them from Vault.
 
 ### Architecture
-#### Component Diagram
-```text
-┌─────────────────┐    ┌──────────────────┐    ┌────────────────────┐
-│   Kubernetes    │    │   External       │    │   HashiCorp Vault  │
-│   Applications  │◄───│   Secrets        │◄───│   (Vault Server)   │
-│                 │    │   Operator       │    │                    │
-└─────────────────┘    └──────────────────┘    └────────────────────┘
-         │                       │                        │
-         └───────────────────────┼────────────────────────┘
-                                 │
-                          ┌──────────────┐
-                          │ Kubernetes   │
-                          │   Secrets    │
-                          └──────────────┘
+
+```
+Vault ──[reads]── ESO Operator ──[creates/updates]──► K8s Secret
+                                                           │
+                                                           │ secretKeyRef
+                                                           ▼
+                                                       Pod (env vars)
 ```
 
-#### Data Flow
-- Vault Stores Secrets → Secrets stored in KV v2 engine
-- ESO Watches Vault → Operator periodically checks for changes
-- Kubernetes Secrets Created → ESO creates/updates K8s secrets
-- Applications Consume → Pods mount secrets as volumes or env vars
+Pod sees a normal K8s Secret. ESO is the watcher that keeps it in sync.
 
-### Namespace Strategy
-| **Namespace**        | **Purpose**       | **Components**                          |
-| -------------------- | ----------------- | --------------------------------------- |
-| **external-secrets** | ESO Operations    | ESO Deployment, Service Account         |
-| **vault**            | Secret Management | Vault Server, Persistent Storage        |
-| **student-api**      | Application       | API Pods, Database, Application Secrets |
-| **observability**    | Monitoring        | Grafana, Prometheus, Exporter Secrets   |
-
-## Prerequisites
-### System Requirements
-
-- Kubernetes cluster (Minikube 3-node cluster)
-- Vault installed and running in vault namespace
-- Vault initialized and unsealed
-- kubectl configured and accessible
-- Proper node labeling:
-  - minikube-m03: type=dependent_services (Vault, ESO)
-
-### Pre-deployment Verification
-```bash
-# Verify cluster nodes and labels
-kubectl get nodes --show-labels
-
-# Verify Vault is running
-kubectl get pods -n vault
-
-# Verify Vault is accessible
-kubectl exec -n vault -it deployment/vault -- vault status
-
-# Check Vault secrets exist
-kubectl exec -n vault -it deployment/vault -- \
-  vault kv get secret/studentdb
-```
-
-### Installation Steps
-
-#### Step 1: Install External Secrets Operator CRDs
-```bash
-# Install official ESO CRDs and controller
-kubectl apply -f https://github.com/external-secrets/external-secrets/releases/download/v0.9.9/external-secrets.yaml
-
-# Verify CRDs are installed
-kubectl get crd | grep external-secrets.io
-```
-
-#### Step 2: Deploy ESO Configuration
-```bash
-# Set Vault token as environment variable
-export VAULT_TOKEN="hvs.nWprgl3SPpwRLKPhCsJThohS"
-
-# Deploy using envsubst for variable substitution
-envsubst < external-secrets.yaml | kubectl apply -f -
-```
-
-#### Step 3: Verify Deployment
-```bash
-# Check ESO operator is running
-kubectl get pods -n external-secrets
-
-# Check ClusterSecretStore status
-kubectl get clustersecretstores
-
-# Check ExternalSecret resources
-kubectl get externalsecrets -A
-```
-
-## ESO Resources - Quick Reference
-### 1. Namespaces
-- Purpose: Logical separation of components and secret domains
-- external-secrets: Dedicated namespace for ESO operator and management components
-- student-api: Houses application workloads and database-related secrets
-- observability: Contains monitoring stack tools and their configuration secrets
-
-### 2. ServiceAccount
-- Purpose: Provides identity for ESO to interact with Kubernetes API
-- ServiceAccount used by ESO pods for authentication and API operations
-- Serves as the identity that RBAC rules are applied to for authorization
-
-### 3. ClusterRole
-- Purpose: Defines the permissions ESO needs across the entire cluster
-- Grants full access to manage secrets, external secrets, and secret stores
-- Provides read access for namespace discovery and service connectivity
-
-### 4. ClusterRoleBinding
-- Purpose: Connects the ServiceAccount to the ClusterRole permissions
-- Links the ESO ServiceAccount to the defined ClusterRole rules
-- Enables cluster-wide access for managing secrets across all namespaces
-
-### 5. Vault Token Secret
-- Purpose: Securely stores authentication token for Vault access
-- Kubernetes Secret containing the Vault token for API authentication
-- ESO reads this token to establish secure connection with Vault server
-
-### 6. ESO Deployment
-- Purpose: Runs the External Secrets Operator controller
-- Deployment that runs the ESO container which manages secret synchronization
-- Uses the designated ServiceAccount and operates in its dedicated namespace
-
-### 7. ClusterSecretStore
-- Purpose: Configures the connection to external secret manager (Vault)
-- Defines Vault server endpoint, secrets path, and authentication method
-- Cluster-scoped resource that can be referenced from any namespace
-
-### 8. ExternalSecrets (3 instances)
-- Purpose: Declares what secrets to sync and their destination
-#### studentdb-secrets → student-api namespace
-- Synchronizes PostgreSQL database credentials from Vault to application namespace
-- Creates Kubernetes secret with database username and password for app consumption
-#### postgres-exporter-secret → observability namespace
-- Fetches monitoring credentials for PostgreSQL exporter from Vault
-- Provides database connection details and credentials for metrics collection
-#### grafana-secret → observability namespace
-- Retrieves Grafana administration credentials from Vault secrets
-- Supplies admin username and password for Grafana dashboard access
-
-## Troubleshooting
-### Diagnostic Commands
-#### 1. Verify ESO Operator Status
-```bash
-# Check ESO pod is running
-kubectl get pods -n external-secrets
-
-# Check ESO logs for errors
-kubectl logs -n external-secrets deployment/external-secrets-operator
-
-# Verify ESO can access Kubernetes API
-kubectl auth can-i get secrets --as=system:serviceaccount:external-secrets:external-secrets
-```
-
-#### 2. Verify ClusterSecretStore Connectivity
-```bash
-# Check ClusterSecretStore status
-kubectl get clustersecretstores
-kubectl describe clustersecretstore vault-backend
-
-# Expected output:
-# Status:
-#   Conditions:
-#     Last Transition Time:  2025-09-17T08:32:40Z
-#     Message:               store validated
-#     Reason:                Valid
-#     Status:                True
-#     Type:                  Ready
-```
-
-#### 3. Verify ExternalSecret Synchronization
-```bash
-# Check ExternalSecret status across all namespaces
-kubectl get externalsecrets -A
-
-# Check specific ExternalSecret details
-kubectl describe externalsecret studentdb-secrets -n student-api
-kubectl describe externalsecret postgres-exporter-secret -n observability
-
-# Check sync status in status conditions
-kubectl get externalsecret studentdb-secrets -n student-api -o jsonpath='{.status.conditions}'
-```
-
-#### 4. Verify Kubernetes Secrets Creation
-```bash
-# Check secrets are created in target namespaces
-kubectl get secrets -n student-api
-kubectl get secrets -n observability
-
-# Verify secret contents
-kubectl get secret postgres-secret -n student-api -o jsonpath='{.data.POSTGRES_USER}' | base64 -d
-kubectl get secret postgres-secret -n student-api -o jsonpath='{.data.POSTGRES_PASSWORD}' | base64 -d
-```
-
-#### 5. Verify Vault Connectivity
-```bash
-# Test Vault connectivity from within cluster
-kubectl run vault-test --image=curlimages/curl -it --rm -- \
-  curl -s http://vault-service.vault.svc.cluster.local:8200/v1/sys/health
-
-# Verify Vault secrets are accessible
-kubectl exec -n vault -it deployment/vault -- \
-  vault kv get secret/studentdb
-```
-
-## Common Issues and Solutions
-
-### Issue 1: ExternalSecret in "SecretSyncedError" State
-**Symptoms:**
-- ExternalSecret status shows Ready: False
-- Error message about missing secrets or permissions
-
-**Diagnosis:**
-```bash
-kubectl describe externalsecret <name> -n <namespace>
-```
-
-**Common Causes & Solutions:**
-
-#### 1. Missing Vault Secret:
+### Install ESO
 
 ```bash
-# Verify secret exists in Vault
-kubectl exec -n vault -it deployment/vault -- vault kv get secret/studentdb
-```
+helm repo add external-secrets https://charts.external-secrets.io
+helm repo update
 
-#### 2. Incorrect Vault Path:
-
-- Ensure path matches KV v2 structure (secret/data/studentdb)
-- Check key property in ExternalSecret matches Vault path
-
-#### 3. Token Permissions:
-
-```bash
-# Verify token has read permissions
-kubectl exec -n vault -it deployment/vault -- \
-  vault token capabilities secret/data/studentdb
-```
-
-### Issue 2: Vault Connectivity Problems
-**Symptoms:**
-- ClusterSecretStore status not Ready
-- Network connection errors in ESO logs
-
-**Solutions:**
-```bash
-# Verify Vault service exists
-kubectl get svc -n vault
-
-# Test DNS resolution
-kubectl run dns-test --image=busybox -it --rm -- nslookup vault-service.vault.svc.cluster.local
-
-# Check network policies
-kubectl get networkpolicies -n vault
-```
-
-### Issue 3: RBAC Permission Errors
-**Symptoms:**
-- ESO logs show "forbidden" errors
-- ExternalSecrets not processed
-
-**Solutions:**
-```bash
-# Verify ServiceAccount permissions
-kubectl auth can-i get secrets --as=system:serviceaccount:external-secrets:external-secrets
-
-# Check ClusterRole binding
-kubectl describe clusterrolebinding external-secrets-cluster-role-binding
-```
-
-## Maintenance & Operations
-
-### Regular Monitoring
-#### 1. Health Checks
-```bash
-# Daily health check script
-#!/bin/bash
-echo "=== ESO Status ==="
-kubectl get pods -n external-secrets
-
-echo "=== ClusterSecretStore Status ==="
-kubectl get clustersecretstores
-
-echo "=== ExternalSecret Status ==="
-kubectl get externalsecrets -A
-
-echo "=== Secret Sync Status ==="
-for ns in student-api observability; do
-  echo "--- $ns ---"
-  kubectl get secrets -n $ns
-done
-```
-
-#### 2. Log Monitoring
-```bash
-# Tail ESO logs for real-time monitoring
-kubectl logs -n external-secrets deployment/external-secrets-operator -f
-
-# Check for specific error patterns
-kubectl logs -n external-secrets deployment/external-secrets-operator | grep -i error
-```
-
-### Secret Rotation Procedures
-#### 1. Rotate Vault Secrets
-```bash
-# Update secret in Vault
-kubectl exec -n vault -it deployment/vault -- \
-  vault kv put secret/studentdb \
-    POSTGRES_USER=postgres \
-    POSTGRES_PASSWORD=new_secure_password_123
-
-# The Kubernetes secret will auto-update within refreshInterval (1h)
-# Or force immediate update by deleting and recreating ExternalSecret
-kubectl delete externalsecret studentdb-secrets -n student-api
-kubectl apply -f external-secrets.yaml
-```
-
-#### 2. Rotate Vault Token
-```bash
-# Generate new token in Vault
-kubectl exec -n vault -it deployment/vault -- \
-  vault token create -policy=default -period=24h
-
-# Update Kubernetes secret
-kubectl create secret generic vault-token \
-  --from-literal=token=new_token_value \
-  -n external-secrets --dry-run=client -o yaml | kubectl apply -f -
-```
-
-#### Backup and Recovery
-
-#### 1. Backup ESO Configuration
-```bash
-# Backup all ESO-related resources
-kubectl get externalsecrets -A -o yaml > externalsecrets-backup-$(date +%Y%m%d).yaml
-kubectl get clustersecretstores -o yaml > clustersecretstores-backup-$(date +%Y%m%d).yaml
-kubectl get -n external-secrets secret vault-token -o yaml > vault-token-backup-$(date +%Y%m%d).yaml
-```
-
-#### 2. Disaster Recovery
-```bash
-# Restore ESO configuration
-kubectl apply -f externalsecrets-backup-$(date +%Y%m%d).yaml
-kubectl apply -f clustersecretstores-backup-$(date +%Y%m%d).yaml
-kubectl apply -f vault-token-backup-$(date +%Y%m%d).yaml
-
-# Verify synchronization
-kubectl get externalsecrets -A
-kubectl get secrets -n student-api
-```
-
-### Security Considerations
-
-| **Aspect**              | **Status**   | **Implementation**                     |
-| ----------------------- | ------------ | -------------------------------------- |
-| **Namespace Isolation** |  Implemented | Separate namespaces for components     |
-| **Service Account**     |  Implemented | Dedicated SA with minimal permissions  |
-| **Token Security**      |  Implemented | Stored as Kubernetes Secret            |
-| **Network Security**    |  Basic       | ClusterIP services, no TLS             |
-| **Access Control**      |  Implemented | RBAC with principle of least privilege |
-
-### Security Best Practices
-
-#### 1. Vault Token Management
-```bash
-# Create dedicated policy for ESO
-kubectl exec -n vault -it deployment/vault -- \
-  vault policy write eso-policy - <<EOF
-# Read-only access to specific paths
-path "secret/data/studentdb" {
-  capabilities = ["read"]
-}
-
-path "monitoring/data/*" {
-  capabilities = ["read"]
-}
-
-# List access for discovery
-path "secret/metadata/*" {
-  capabilities = ["list"]
-}
-
-path "monitoring/metadata/*" {
-  capabilities = ["list"]
-}
-EOF
-
-# Create token with limited TTL
-kubectl exec -n vault -it deployment/vault -- \
-  vault token create -policy=eso-policy -period=24h -renewable=true
-```
-
-#### 2. Network Security Enhancements
-```yaml
-# Network Policy for ESO (optional)
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-eso-vault
-  namespace: external-secrets
-spec:
-  podSelector:
-    matchLabels:
-      app: external-secrets
-  policyTypes:
-  - Egress
-  egress:
-  - to:
-    - namespaceSelector:
-        matchLabels:
-          name: vault
-    ports:
-    - protocol: TCP
-      port: 8200
-```
-
-#### 3. Production Security Checklist
-
-- Enable TLS for Vault communication
-- Use Vault namespaces for multi-tenancy
-- Implement automatic token rotation
-- Enable Vault audit logging
-- Use Kubernetes service accounts for Vault auth instead of tokens
-- Implement network policies to restrict traffic
-- Regular security scanning of container images
-
-# Student API Helm Deployment - Documentation
-
-### Overview
-A Helm-managed Flask REST API deployment with PostgreSQL database integration, featuring database migrations and secret management.
-
-### Architecture Components
-#### 1. Namespace
-- Name: student-api
-- Managed By: Helm
-- Labels: Standard Helm labels for resource tracking
-- Purpose: Isolates all application resources
-
-#### 2. Configuration Management
-- ConfigMap: flask-config
-- Stores non-sensitive configuration:
-  - POSTGRES_HOST: "postgres" (Kubernetes service name)
-  - POSTGRES_PORT: "5432" (Database port)
-  - POSTGRES_DB: "studentdb" (Database name)
-- Secret: postgres-secret
-- Stores sensitive credentials (referenced from ExternalSecret):
-  - POSTGRES_USER: Database username
-  - POSTGRES_PASSWORD: Database password
-
-#### 3. Application Deployment
-- Deployment: flask-api
-  - Replicas: 2 (high availability)
-  - Node Selection: Runs on nodes with label type: application
-  - Image: akhilthyadi/flask-app:7.0.0
-- Pod Structure:
-  - Init Container: db-migrations
-  - Purpose: Database schema initialization and migrations
-  - Working Directory: /api/app
-- Environment:
-  - Mix of ConfigMap (non-sensitive) and Secret (sensitive) values
-- Process:
-  - Waits for PostgreSQL readiness using pg_isready
-  - Executes database migrations with flask db upgrade
-- Main Container: flask-api
-  - Port: 5000 (Flask application port)
-  - Environment: Same configuration as init container
-  - Readiness: Inherits from successful init container completion
-
-#### 4. Network Exposure
-- Service: flask-api-service
-- Type: NodePort (external access)
-  - Port Mapping:
-  - Service Port: 80
-- Target Port: 5000 (container port)
-- Selector: app: flask-api (matches deployment pods)
-
-### Key Features
-#### 1. Database Integration
-- Pre-startup migrations: Ensures database schema is current before app starts
-- Connection resilience: Init container waits for database availability
-- Secret separation: Credentials stored securely, separate from configuration
-
-#### 2. Helm Management
-- Standard labels: app.kubernetes.io/* labels for consistent resource management
-- Release tracking: Annotations track Helm release information
-- Component identification: Clear component labeling (api, config, service)
-
-#### 3. Security & Configuration
-- ConfigMap: Non-sensitive configuration
-- Secret references: Sensitive data from ExternalSecret/Vault
-- Node isolation: Specific node selection for deployment control
-
-### Dependencies
-#### 1. Required Infrastructure
-- Kubernetes Cluster: With proper node labeling
-- PostgreSQL Database: Service named postgres in accessible namespace
-- External Secrets Operator: For secret management from Vault
-- Node Preparation:
-  - Application nodes: type: application
-  - Database nodes: Appropriate labeling for PostgreSQL
-
-#### 2. External Services
-- Vault: For secret storage and management
-- ExternalSecret: postgres-secret must be populated before deployment
-
-### Deployment Sequence
-- Namespace Creation → Isolate application resources
-- ConfigMap Application → Apply non-sensitive configuration
-- Secret Verification → Ensure postgres-secret exists via ExternalSecret
-- Deployment Creation →
-  - Init container runs migrations
-  - Main containers start after successful migrations
-  - Service Exposure → Make API available via NodePort
-
-# PostgresDB Manifest - Documentation
-
-### Overview
-A Helm-managed PostgreSQL database deployment for the Student API application, featuring persistent storage, secure credential management, and proper Kubernetes service exposure.
-
-### Architecture Components
-#### 1. Namespace
-- Name: student-api (shared with application)
-- Managed By: Helm
-- Labels: Standard Helm labels with chart version tracking
-- Purpose: Shared namespace for both application and database components
-
-### 2. Configuration Management
-- ConfigMap: postgres-config
-- Stores database connection configuration:
-  - POSTGRES_HOST: "postgres" (Kubernetes service name)
-  - POSTGRES_PORT: "5432" (Database port)
-  - POSTGRES_DB: "studentdb" (Database name)
-
-**Key Features:**
-- Version tracking: app.kubernetes.io/version: "15"
-- Component identification: app.kubernetes.io/component: database-config
-
-### 3. Storage Management
-- PersistentVolumeClaim: postgres-pvc
-- Access Mode: ReadWriteOnce (single node access)
-  - Storage Request: 1Gi
-  - Purpose: Persistent storage for database data
-  - Component Label: app.kubernetes.io/component: database-storage
-
-### 4. Database Deployment
-- Deployment: postgres
-- Replicas: 1 (single instance for database)
-- Node Selection: Runs on nodes with label type: database
-- Image: postgres:15 (specific version for stability)
-- Port: 5432 (standard PostgreSQL port)
-
-**Container Configuration:**
-- Environment Variables:
-  - From Secrets (sensitive):
-  - POSTGRES_USER: Database superuser
-  - POSTGRES_PASSWORD: Database password
-
-- From ConfigMap (non-sensitive):
-  - POSTGRES_DB: Database name
-  - POSTGRES_HOST: Service hostname
-  - POSTGRES_PORT: Service port
-
-**Volume Mounts:**
-- Mount Path: /var/lib/postgresql/data
-- Volume: postgres-storage (backed by PVC)
-- Purpose: Persistent data storage across pod restarts
-
-5. Network Exposure
-- Service: postgres
-- Type: ClusterIP (internal cluster access only)
-- Port: 5432 (matches container port)
-- Selector: app: postgres (matches deployment pods)
-- Purpose: Provides stable DNS name for database access within cluster
-
-### Key Features
-### 1. Storage Persistence
-- PVC-backed: Data survives pod restarts and rescheduling
-- Proper mount: PostgreSQL data directory mounted to persistent storage
-- Size management: 1GB initial allocation, scalable as needed
-
-### 2. Security & Configuration
-- Secret separation: Credentials managed separately via ExternalSecret/Vault
-- ConfigMap isolation: Non-sensitive configuration in ConfigMap
-- Internal service: ClusterIP type limits exposure to cluster internal only
-
-### 3. Helm Management
-- Version tracking: Clear PostgreSQL version identification
-- Component labeling: Detailed component breakdown (database, config, service, storage)
-- Release annotations: Helm release tracking for management
-
-### 4. Node Management
-- Dedicated nodes: Database runs on type: database labeled nodes
-- Isolation: Separates database from application workloads
-- Resource control: Enables specialized node configuration for database performance
-
-### Dependencies
-1. Required Infrastructure
-- Kubernetes Cluster: With proper node labeling
-- Storage Class: Supports dynamic provisioning for PVC
-- External Secrets Operator: For secret management from Vault
-- Node Preparation:
-  - Database nodes: type: database label
-  - Storage: Support for ReadWriteOnce volumes
-
-### 2. External Services
-- Vault: For secret storage of database credentials
-- ExternalSecret: postgres-secret must be populated before deployment
-
-### Deployment Sequence
-1. Namespace Verification → Ensure shared namespace exists
-2. ConfigMap Application → Apply database configuration
-3. PVC Creation → Set up persistent storage
-4. Secret Verification → Ensure postgres-secret exists via ExternalSecret
-5. Deployment Creation → Start PostgreSQL database with persistent storage
-6. Service Exposure → Create ClusterIP service for internal access
-
-### Database Configuration Details
-#### Environment Variables Usage:
-- POSTGRES_USER/POSTGRES_PASSWORD: Authentication (from Secret)
-- POSTGRES_DB: Default database creation (from ConfigMap)
-- POSTGRES_HOST/POSTGRES_PORT: Service configuration (from ConfigMap)
-
-#### Storage Configuration:
-- Data Persistence: All database files stored in mounted PVC
-- Data Survival: Database state maintained across pod restarts
-- Backup Ready: Persistent storage enables backup strategies
-
-# Vault & External Secrets Troubleshooting Guide
-### Overview
-This guide covers troubleshooting Vault deployment on Kubernetes and integration with External Secrets Operator (ESO) for secret synchronization.
-
-### Quick Start Troubleshooting Flow
-```bash
-# 1. Check Vault status
-kubectl get all -n vault
-
-# 2. Check ESO status
-kubectl get all -n external-secrets
-
-# 3. Verify ExternalSecret status
-kubectl get externalsecrets -n student-api
-
-# 4. Check created secrets
-kubectl get secrets -n student-api
-```
-
-### Vault-Specific Issues
-
-#### Issue 1: Vault Pod Pending
-**Symptoms:**
-- Vault pod stuck in Pending status
-- No containers starting
-
-**Diagnosis:**
-```bash
-# Check pod events
-kubectl describe pod <vault-pod> -n vault
-
-# Check node labels
-kubectl get nodes --show-labels
-kubectl get nodes -o custom-columns=NAME:.metadata.name,TYPE:.metadata.labels.type
-```
-
-**Solutions:**
-- Add missing node label:
-```bash
-kubectl label node <node-name> type=dependent_services --overwrite
-```
-- Update deployment nodeSelector:
-```yaml
-nodeSelector:
-  type: dependent_services
-```
-
-### Issue 2: Vault Pod CrashLoopBackOff
-
-**Symptoms:**
-- Vault pod starts and immediately crashes
-- CrashLoopBackOff status
-
-**Diagnosis:**
-```bash
-# Check Vault logs
-kubectl logs <vault-pod> -n vault
-
-# Check pod description
-kubectl describe pod <vault-pod> -n vault
-```
-
-### Common Errors & Fixes:
-
-| **Error Message**                                                   | **Cause**                                      | **Solution**                                            |
-| ------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------- |
-| **A storage backend must be specified**                             | Missing storage backend in non-dev mode        | Add `-dev` flag or configure a storage backend          |
-| **You cannot specify a custom root token ID outside of "dev" mode** | Using `VAULT_DEV_ROOT_TOKEN_ID` without `-dev` | Remove token ID or start Vault with the `-dev` flag     |
-| **Couldn't start vault with IPC_LOCK**                              | `IPC_LOCK` capability issue                    | Grant `IPC_LOCK` capability or set `disable_mlock=true` |
-
-- Fix Deployment for Dev Mode:
-```yaml
-args:
-  - "server"
-  - "-dev"
-  - "-dev-root-token-id=root"
-```
-
-### Issue 3: Vault CLI HTTPS/HTTP Mismatch
-
-**Symptoms:**
-
-```txt
-Error: http: server gave HTTP response to HTTPS client
-Cause: Vault dev server runs on HTTP, CLI defaults to HTTPS
-```
-
-**Solution:**
-```bash
-export VAULT_ADDR='http://127.0.0.1:8200'
-export VAULT_TOKEN='root'
-vault status
-```
-
-### Issue 4: Cannot Exec into Vault Pod
-**Symptoms:**
-```bash
-kubectl exec -it deploy/vault -n vault -- /bin/sh
-error: Internal error occurred: unable to upgrade connection: container not found ("vault")
-```
-
-**Solutions:**
-- Use pod name instead of deployment:
-```bash
-kubectl get pods -n vault
-kubectl exec -it <pod-name> -n vault -- /bin/sh
-```
-- If pod is crashing, check logs instead:
-```bash
-kubectl logs <pod-name> -n vault
-```
-
-### Issue 5: Vault Secrets Not Persisting
-**Symptoms:**
-- Secrets disappear after pod restart
-- Changes not saved
-- Cause: Dev mode uses in-memory storage
-
-**Solutions:**
-- For development - recreate secrets after restart
-- For production - use persistent storage:
-```yaml
-storage "file" {
-  path = "/vault/data"
-}
-```
-
-## External Secrets Operator (ESO) Issues
-
-### Issue 1: ESO Not Creating Secrets
-
-**Symptoms:**
-- ExternalSecret created but no Kubernetes secret generated
-- kubectl get secrets shows no expected secrets
-
-**Diagnosis:**
-```bash
-# Check ExternalSecret status
-kubectl get externalsecrets -n student-api
-kubectl describe externalsecret student-api-secrets -n student-api
-
-# Check ESO logs
-kubectl logs -n external-secrets -l app.kubernetes.io/name=external-secrets
-```
-
-### Common Errors:
-
-| **Error**                                                                                        | **Cause**                | **Solution**                                                 |
-| ------------------------------------------------------------------------------------------------ | ------------------------ | ------------------------------------------------------------ |
-| **failed to get API group resources: v1beta1: the server could not find the requested resource** | ESO version mismatch     | Upgrade to version **v0.19.2+**                              |
-| **secrets is forbidden: User cannot list resource "secrets"**                                    | Insufficient permissions | Add proper **ClusterRole** and bind it to the ServiceAccount |
-
-### Issue 2: ESO Permission Issues
-**Symptoms:**
-- ESO logs show permission denied errors
-- secrets is forbidden messages
-
-**Diagnosis:**
-```bash
-# Check ServiceAccount permissions
-kubectl auth can-i list secrets --as=system:serviceaccount:external-secrets:external-secrets-sa
-
-# Check ESO logs
-kubectl logs -n external-secrets deployment/external-secrets
-```
-
-**Solution - Create Proper RBAC:**
-```yaml
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: external-secrets-sa
-  namespace: external-secrets
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: external-secrets-role
-rules:
-- apiGroups: [""]
-  resources: ["secrets"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-- apiGroups: ["external-secrets.io"]
-  resources: ["externalsecrets", "clustersecretstores"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: external-secrets-binding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: external-secrets-role
-subjects:
-- kind: ServiceAccount
-  name: external-secrets-sa
-  namespace: external-secrets
-```
-
-### Issue 3: ESO Version Mismatch
-
-**Symptoms:**
-- API version conflicts
-- CRD compatibility issues
-
-**Solution - Upgrade via Helm:**
-```bash
-# Uninstall old version
-helm uninstall external-secrets -n external-secrets
-
-# Install latest version
 helm install external-secrets external-secrets/external-secrets \
-  --namespace external-secrets \
-  --create-namespace \
-  --version 0.19.2
+  -n external-secrets --create-namespace \
+  --set installCRDs=true
 ```
 
-### Issue 4: Vault Backend Connection Issues
-**Symptoms:**
-- ExternalSecret status shows SecretSynced: False
-- Connection errors in ESO logs
+Three pods come up:
+- `external-secrets-operator` — the controller
+- `external-secrets-cert-controller` — manages webhook certs
+- `external-secrets-webhook` — admission webhook for CRD validation
 
-**Diagnosis:**
+### Create the Vault Token Secret (Out-of-Band)
+
+ESO needs a Vault token to authenticate. We can't put it in Git, so create manually:
+
 ```bash
-# Check ClusterSecretStore
-kubectl get clustersecretstores
-kubectl describe clustersecretstore vault-backend
-
-# Verify Vault connectivity
-kubectl exec -it <vault-pod> -n vault -- vault status
+kubectl create secret generic vault-token \
+  --from-literal=token=<root-token> \
+  -n external-secrets
 ```
 
-**Solution - Verify ClusterSecretStore Configuration:**
+### Define ClusterSecretStore + ExternalSecret
+
+**[k8s/external-secrets-store.yaml](../k8s/external-secrets-store.yaml):**
+
 ```yaml
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ClusterSecretStore
 metadata:
   name: vault-backend
 spec:
   provider:
     vault:
-      server: "http://vault.vault.svc.cluster.local:8200"
+      server: "http://vault-service.vault.svc.cluster.local:8200"
       path: "secret"
       version: "v2"
       auth:
-        # Use Kubernetes authentication
-        kubernetes:
-          mountPath: "kubernetes"
-          role: "external-secrets"
-          serviceAccountRef:
-            name: external-secrets-sa
-            namespace: external-secrets
+        tokenSecretRef:
+          name: vault-token
+          key: token
+          namespace: external-secrets
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: studentdb-secrets
+  namespace: student-api
+spec:
+  refreshInterval: "1h"
+  secretStoreRef:
+    name: vault-backend
+    kind: ClusterSecretStore
+  target:
+    name: postgres-secret
+    creationPolicy: Owner
+  data:
+    - secretKey: POSTGRES_USER
+      remoteRef: { key: studentdb, property: POSTGRES_USER }
+    - secretKey: POSTGRES_PASSWORD
+      remoteRef: { key: studentdb, property: POSTGRES_PASSWORD }
 ```
 
-## Step-by-Step Troubleshooting Procedures
-
-#### Phase 1: Vault Health Check
+**Apply:**
 ```bash
-# 1. Check Vault deployment
-kubectl get deployment vault -n vault
-kubectl describe deployment vault -n vault
-
-# 2. Check Vault pods
-kubectl get pods -n vault -l app=vault
-kubectl describe pod <vault-pod> -n vault
-
-# 3. Check Vault logs
-kubectl logs -n vault -l app=vault
-
-# 4. Verify Vault service
-kubectl get svc -n vault
-kubectl describe svc vault -n vault
-
-# 5. Test Vault connectivity
-kubectl port-forward svc/vault -n vault 8200:8200 &
-curl http://localhost:8200/v1/sys/health
+kubectl apply -f k8s/external-secrets-store.yaml
 ```
 
-### Phase 2: ESO Health Check
+ESO controller reads `ExternalSecret`, queries Vault, creates a K8s Secret named `postgres-secret` in `student-api` namespace.
+
+### Force Sync (Skip 1h Refresh)
+
 ```bash
-# 1. Check ESO deployment
-kubectl get deployment -n external-secrets
-kubectl describe deployment external-secrets -n external-secrets
-
-# 2. Check ESO pods
-kubectl get pods -n external-secrets -l app.kubernetes.io/name=external-secrets
-
-# 3. Check ESO logs
-kubectl logs -n external-secrets -l app.kubernetes.io/name=external-secrets
-
-# 4. Verify CRDs
-kubectl get crd | grep external-secrets
-
-# 5. Check ClusterSecretStore
-kubectl get clustersecretstores
-kubectl describe clustersecretstore vault-backend
+kubectl annotate externalsecret studentdb-secrets -n student-api \
+  force-sync=$(date +%s) --overwrite
 ```
-
-### Phase 3: ExternalSecret Verification
-```bash
-# 1. Check ExternalSecret status
-kubectl get externalsecrets -A
-kubectl describe externalsecret student-api-secrets -n student-api
-
-# 2. Check created secrets
-kubectl get secrets -n student-api
-kubectl describe secret student-api-secret -n student-api
-
-# 3. Verify secret content
-kubectl get secret student-api-secret -n student-api -o jsonpath='{.data}' | base64 --decode
-
-# 4. Check events
-kubectl get events -n student-api --sort-by='.lastTimestamp'
-kubectl get events -n external-secrets --sort-by='.lastTimestamp'
-```
-
-## Quick Fix Commands
-### Restart Components
-```bash
-# Restart Vault
-kubectl rollout restart deployment/vault -n vault
-
-# Restart ESO
-kubectl rollout restart deployment/external-secrets -n external-secrets
-
-# Delete problematic pods
-kubectl delete pod -n vault <vault-pod>
-kubectl delete pod -n external-secrets <eso-pod>
-```
-
-### Debug Vault
-```bash
-# Port forward for local access
-kubectl port-forward svc/vault -n vault 8200:8200 &
-
-# Set environment variables
-export VAULT_ADDR='http://127.0.0.1:8200'
-export VAULT_TOKEN='root'
-
-# Test Vault
-vault status
-vault secrets list
-Debug ESO
-bash
-# Check ESO pod status
-kubectl get pods -n external-secrets -l app.kubernetes.io/name=external-secrets
-
-# Stream ESO logs
-kubectl logs -n external-secrets -l app.kubernetes.io/name=external-secrets -f
-
-# Check ExternalSecret events
-kubectl describe externalsecret -n student-api student-api-secrets
-```
-
-### Force Secret Refresh
-```bash
-# Annotate ExternalSecret to force refresh
-kubectl annotate externalsecret student-api-secrets -n student-api external-secrets.io/refresh-timestamp="$(date +%s)" --overwrite
-
-# Or delete and recreate
-kubectl delete externalsecret student-api-secrets -n student-api
-kubectl apply -f external-secrets.yaml
-```
-
-| **Error**                                           | **Component**  | **Solution**                                          |
-| --------------------------------------------------- | -------------- | ----------------------------------------------------- |
-| **Pod Pending**                                     | Vault          | Check `nodeSelector` and node labels                  |
-| **CrashLoopBackOff**                                | Vault          | Add `-dev` flag for development mode                  |
-| **http: server gave HTTP response to HTTPS client** | Vault CLI      | Set `VAULT_ADDR=http://...`                           |
-| **failed to get API group resources: v1beta1**      | ESO            | Upgrade ESO to **v0.19.2+**                           |
-| **secrets is forbidden**                            | ESO            | Add proper **ClusterRole** and **ClusterRoleBinding** |
-| **SecretSynced: False**                             | ExternalSecret | Check **ClusterSecretStore** configuration            |
 
 ---
 
-# Student API Troubleshooting Guide
+## Database (Postgres)
 
-### Overview
-This guide provides step-by-step troubleshooting for the Student Management API deployment on Kubernetes, focusing on common issues with database connectivity, environment configuration, and application startup.
+**[k8s/database.yaml](../k8s/database.yaml)** — single-replica Deployment with PVC.
 
-## Quick Start Troubleshooting Flow
-```bash
-# 1. Basic health check
-kubectl get all -n student-api
+Key elements:
+- **PVC `postgres-pvc`** — 1Gi from `standard` StorageClass
+- **`nodeSelector: type=database`** — pinned to minikube-m02
+- **Env from `postgres-secret`** (synced by ESO)
+- **Env from `postgres-config` ConfigMap** for non-secret config (host, port, db name)
 
-# 2. Pod status check
-kubectl get pods -n student-api -o wide
-
-# 3. Check init container logs
-kubectl logs <pod-name> -n student-api -c db-migrations
-
-# 4. Check main app logs
-kubectl logs <pod-name> -n student-api -c flask-api
-
-# 5. Test service connectivity
-kubectl port-forward svc/flask-api-service -n student-api 5000:80
-curl http://localhost:5000/health
-```
-
-## Common Issues & Solutions
-
-### Issue 1: Database Connection Failures
-**Symptoms:**
-- Pods stuck in Init:Error or Init:0/1
-- Logs show: could not translate host name "postgres" to address
-
-**Diagnosis:**
-```bash
-# Check DNS resolution
-kubectl exec -n student-api -it <pod> -c db-migrations -- nslookup postgres
-
-# Verify service endpoints
-kubectl get endpoints -n student-api postgres
-
-# Check environment variables
-kubectl exec -n student-api -it <pod> -c db-migrations -- printenv | grep POSTGRES
-```
-
-**Solutions:**
-
-**1. Create postgres service alias:**
 ```yaml
-apiVersion: v1
-kind: Service
+spec:
+  template:
+    spec:
+      nodeSelector:
+        type: database
+      containers:
+      - name: postgres
+        image: postgres:15
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef: { name: postgres-secret, key: POSTGRES_USER }
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef: { name: postgres-secret, key: POSTGRES_PASSWORD }
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+```
+
+**Why Deployment, not StatefulSet?** For learning — Deployment is simpler. Production should use **StatefulSet** for stable identity, ordered startup, and per-pod PVCs (covered later).
+
+---
+
+## Application (Flask)
+
+**[k8s/application.yaml](../k8s/application.yaml)** — 2-replica Deployment with init container for migrations.
+
+Key elements:
+
+```yaml
+spec:
+  replicas: 2
+  template:
+    spec:
+      nodeSelector:
+        type: application
+      initContainers:                                     # ← migrations
+      - name: db-migrations
+        image: akhilthyadi/flask-app:7.0.0
+        command: ["sh", "-c", "until pg_isready ...; do sleep 2; done; flask db upgrade"]
+      containers:
+      - name: flask-api
+        image: akhilthyadi/flask-app:7.0.0
+        ports: [{ containerPort: 5000 }]
+        env:
+        - name: GUNICORN_CMD_ARGS
+          value: "--bind=0.0.0.0:5000 --workers=2"        # ← critical!
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef: { name: postgres-secret, key: POSTGRES_USER }
+```
+
+**Init container pattern:**
+1. Waits for Postgres to be ready (`pg_isready` loop)
+2. Runs `flask db upgrade` to apply migrations
+3. Exits cleanly → main `flask-api` container starts
+
+This guarantees the schema exists before the app accepts traffic.
+
+**`GUNICORN_CMD_ARGS=--bind=0.0.0.0:5000`** — the most important env var. Without it, Gunicorn binds to `127.0.0.1` (loopback), and the K8s Service can't route traffic to it.
+
+---
+
+## Deep Concepts
+
+### Networking & CoreDNS
+
+#### The 4 K8s Networking Problems
+
+| Problem | Solution | Example |
+|---------|----------|---------|
+| Container ↔ container in same pod | Shared network namespace (`localhost`) | Init container + main container talk via `localhost` |
+| Pod ↔ pod | CNI plugin (Kindnet, Calico, Cilium) — every pod gets unique IP | Flask pod (10.244.0.5) → Postgres pod (10.244.1.4) |
+| Pod ↔ Service | kube-proxy + iptables/IPVS DNAT | Flask pod uses `postgres:5432` → kube-proxy DNATs to actual pod IP |
+| External ↔ pod | NodePort / LoadBalancer / Ingress | NodePort exposes flask-api-service on each node's IP |
+
+#### CoreDNS — The Answer to "How does service discovery work?"
+
+CoreDNS runs as a Deployment in `kube-system`, exposed via a Service called `kube-dns` at IP `10.96.0.10`.
+
+**`/etc/resolv.conf` injected into every pod by kubelet:**
+```
+nameserver 10.96.0.10
+search student-api.svc.cluster.local svc.cluster.local cluster.local
+options ndots:5
+```
+
+**The query flow when Flask runs `psycopg2.connect("postgres")`:**
+
+1. App resolves `postgres` via libc resolver
+2. Resolver sees `ndots:5` — name has 0 dots, less than 5, so try search domains first:
+   - `postgres.student-api.svc.cluster.local` → ✅ matches! Returns `10.96.121.45` (Service ClusterIP)
+3. Pod opens TCP to `10.96.121.45:5432`
+4. kube-proxy's iptables rule DNATs to actual pod IP `10.244.1.4:5432`
+5. Connection established
+
+**DNS naming convention:**
+| Name | Resolves To | Used By |
+|------|-------------|---------|
+| `postgres` | postgres service in **same namespace** | Flask in `student-api` |
+| `postgres.student-api` | postgres in `student-api` from any ns | Cross-namespace shortcut |
+| `postgres.student-api.svc.cluster.local` | FQDN | Always works, used in cross-ns configs |
+| `vault-service.vault.svc.cluster.local` | Vault service from another namespace | ESO config in our project |
+
+#### Service Types
+
+| Type | Reachability | Use Case | In This Project |
+|------|--------------|----------|-----------------|
+| **ClusterIP** (default) | Inside cluster only | Internal services | `postgres`, `vault-service` |
+| **NodePort** | Each node's IP at port 30000–32767 | Quick external access | `flask-api-service` |
+| **LoadBalancer** | Cloud-provisioned external LB | Production external | Would use in EKS for prod |
+| **ExternalName** | DNS CNAME | Alias external SaaS | Not used |
+| **Headless** (`clusterIP: None`) | DNS returns pod IPs directly | StatefulSets | Postgres StatefulSet would use |
+
+#### kube-proxy Modes
+
+| Mode | How It Works | Scale |
+|------|--------------|-------|
+| **iptables** (default) | Linear-rule iptables chains | Up to ~1000 services |
+| **IPVS** | Kernel-level load balancing (hash table) | Tens of thousands of services |
+| **userspace** | Old, slow, deprecated | Don't use |
+
+---
+
+### Storage — PV, PVC, StorageClass
+
+| Object | Created By | Purpose |
+|--------|-----------|---------|
+| **PersistentVolume (PV)** | Cluster admin OR dynamic provisioner | Actual chunk of storage (NFS, EBS, hostpath) |
+| **PersistentVolumeClaim (PVC)** | Developer / app | Request for storage with size + access mode |
+| **StorageClass** | Cluster admin | Template for dynamically creating PVs |
+
+#### Static vs Dynamic Provisioning
+
+| Static | Dynamic |
+|--------|---------|
+| Admin pre-creates PVs | StorageClass auto-creates PVs when PVC is created |
+| Manual, doesn't scale | Automated, common in cloud |
+| Used in on-prem | Used everywhere now |
+
+minikube has a default StorageClass `standard` (hostpath provisioner) — files end up at `/var/hostpath-provisioner/<ns>/<pvc-name>` on the node.
+
+#### Access Modes
+
+| Mode | Meaning | Use Case |
+|------|---------|----------|
+| **ReadWriteOnce (RWO)** | One node mounts RW | Postgres, Vault — single writer |
+| **ReadWriteMany (RWX)** | Multiple nodes mount RW | Shared file storage (NFS, EFS) |
+| **ReadOnlyMany (ROX)** | Multiple nodes mount RO | Static configs |
+| **ReadWriteOncePod** | Only one POD mounts | Strict single-writer |
+
+#### Reclaim Policies
+
+| Policy | What Happens When PVC Deleted |
+|--------|-------------------------------|
+| **Retain** (default for static) | PV kept; data preserved; manual cleanup |
+| **Delete** (default for dynamic) | PV + underlying storage deleted |
+| **Recycle** (deprecated) | Data scrubbed, PV reused |
+
+---
+
+### Workloads — Deployment vs StatefulSet vs DaemonSet
+
+| Aspect | Deployment | StatefulSet | DaemonSet |
+|--------|-----------|-------------|-----------|
+| **Pod naming** | Random (`flask-api-67769d47d5-2qq8s`) | Ordered (`postgres-0`, `postgres-1`) | One per node (`promtail-xyz`) |
+| **Storage** | Shared PVC across replicas | Each pod gets own PVC via `volumeClaimTemplates` | Usually no PVC |
+| **Use case** | Stateless apps (Flask) | Databases, queues, anything stateful | Per-node agents (logging, monitoring, CNI) |
+| **Scaling** | Random order | Strict ordinal (0 → 1 → 2 to scale up; 2 → 1 → 0 to scale down) | Auto: one per node |
+| **DNS** | Single ClusterIP via Service | Stable per-pod DNS via headless Service | Same as Deployment |
+
+#### Why Postgres Should Be a StatefulSet (Production)
+
+We used Deployment in this project for simplicity. Production reasons to use StatefulSet:
+- **Stable identity** — pod-0 is always primary, can do replication setup
+- **Per-pod PVC** — `volumeClaimTemplates` creates `data-postgres-0`, `data-postgres-1` separately
+- **Ordered startup/teardown** — primary up first, then replicas
+- **Stable DNS** — `postgres-0.postgres.student-api.svc.cluster.local`
+
+```yaml
+apiVersion: apps/v1
+kind: StatefulSet
 metadata:
   name: postgres
-  namespace: student-api
 spec:
-  selector:
-    app: postgres
-  ports:
-    - port: 5432
-      targetPort: 5432
-```
-**2. Update environment variables:**
-
-```bash
-kubectl set env deployment/flask-api POSTGRES_HOST=postgres POSTGRES_PORT=5432 -n student-api
+  serviceName: postgres   # must reference a headless service
+  replicas: 3
+  volumeClaimTemplates:   # ← per-pod PVC
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 10Gi } }
 ```
 
-### Issue 2: Database Authentication Failures
-**Symptoms:**
-- Logs show: password authentication failed for user
-- Init containers failing with authentication errors
+#### Init Containers vs Sidecars
 
-**Diagnosis:**
-```bash
-# Check ExternalSecret status
-kubectl get externalsecret -n student-api
-kubectl describe externalsecret postgres-secret -n student-api
+| Type | When | Lifecycle | Project Example |
+|------|------|-----------|----------------|
+| **Init container** | Before main container starts | Runs once, exits | `db-migrations` runs `flask db upgrade` before Flask starts |
+| **Sidecar** | Alongside main container | Lives the lifetime of the pod | A log shipper next to Flask |
 
-# Verify secret content
-kubectl get secret postgres-secret -n student-api -o yaml
-kubectl get secret postgres-secret -n student-api -o jsonpath='{.data.POSTGRES_USER}' | base64 --decode
+---
+
+### Probes — Liveness, Readiness, Startup
+
+Without proper probes, K8s routes traffic to pods that aren't ready yet → 5xx errors during deploys.
+
+| Probe | Question Answered | Failure Action |
+|-------|------------------|---------------|
+| **livenessProbe** | "Is this pod alive?" | K8s **restarts** the pod |
+| **readinessProbe** | "Can this pod accept traffic?" | K8s **removes** pod from Service endpoints |
+| **startupProbe** | "Is the app done starting?" | Disables liveness until passes (for slow-starting apps) |
+
+**Vault example:**
+```yaml
+readinessProbe:
+  httpGet:
+    path: /v1/sys/health
+    port: 8200
+  initialDelaySeconds: 10
+  periodSeconds: 10
+livenessProbe:
+  httpGet:
+    path: /v1/sys/health
+    port: 8200
+  initialDelaySeconds: 60
+  periodSeconds: 30
 ```
 
-**Solutions:**
+This is why Vault shows `0/1` until unsealed — `/v1/sys/health` returns 503 when sealed → readiness fails → not "ready" → no traffic.
 
-**Test database connection manually:**
-```bash
-kubectl exec -n student-api -it <pod> -- bash -c 'PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -c "\dt"'
+**Probe types:**
+- `httpGet` — HTTP request, success on 2xx/3xx
+- `tcpSocket` — TCP connect succeeds
+- `exec` — Command exits 0
+- `grpc` — gRPC health check
+
+---
+
+### Rollouts & Rollbacks
+
+#### Hierarchy
+
+```
+Deployment
+   ↓ creates and manages
+ReplicaSet
+   ↓ creates and manages
+Pods
 ```
 
-**Check ExternalSecret controller logs:**
-```bash
-kubectl -n external-secrets logs -l app.kubernetes.io/name=external-secrets
-```
+When you change the Deployment (image, env, etc.), it creates a **new ReplicaSet** and gradually scales it up while scaling old one down.
 
-### Issue 3: Malformed Database URI
-**Symptoms:**
-- Logs show: ValueError: invalid literal for int() with base 10: 'tcp:'
-- Application fails to start with database configuration errors
+#### Strategies
 
-**Diagnosis:**
-```bash
-# Check environment variables for tcp: prefix
-kubectl exec -n student-api -it <pod> -c flask-api -- printenv | grep POSTGRES
-```
+| Strategy | Behavior | Use Case |
+|----------|----------|----------|
+| **RollingUpdate** (default) | Gradually replaces old pods | Zero-downtime deployments |
+| **Recreate** | Kills all old, then creates new | Apps that can't run two versions (schema change) |
 
-**Solutions:**
-- Remove tcp: prefix from environment variables:
-```bash
-kubectl set env deployment/flask-api POSTGRES_HOST=postgres POSTGRES_PORT=5432 -n student-api
-```
-
-- Verify expected environment format:
-```bash
-POSTGRES_HOST=postgres
-POSTGRES_PORT=5432
-POSTGRES_USER=your_username
-POSTGRES_PASSWORD=your_password
-POSTGRES_DB=student_db
-```
-
-### Issue 4: Application Import/Startup Errors
-**Symptoms:**
-- Logs show: Error: Could not import 'wsgi' or No such command 'db'
-- Main container in CrashLoopBackOff
-
-**Diagnosis:**
-```bash
-# Check application logs
-kubectl logs <pod> -n student-api -c flask-api --previous
-
-# Verify environment variables
-kubectl exec -n student-api -it <pod> -c flask-api -- printenv
-```
-
-**Solutions:**
-- Check FLASK_APP environment variable:
-```bash
-kubectl set env deployment/flask-api FLASK_APP=wsgi:app -n student-api
-```
-- Verify working directory and entrypoint in container configuration
-
-### Issue 5: Image Pull and Resource Issues
-
-**Symptoms:**
-- Pods in ImagePullBackOff or ErrImagePull
-- Pods in CrashLoopBackOff with OOMKilled events
-
-**Diagnosis:**
-```bash
-# Check pod events
-kubectl describe pod <pod-name> -n student-api
-
-# Check resource usage
-kubectl top pods -n student-api
-```
-**Solutions:**
-- Image pull issues:
-  - Verify image name and tag
-  - Check registry authentication with imagePullSecrets
-
-**Memory issues:**
+#### RollingUpdate Tuning
 
 ```yaml
-resources:
-  requests:
-    memory: "128Mi"
-    cpu: "100m"
-  limits:
-    memory: "512Mi"
-    cpu: "500m"
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1          # extra pods allowed above desired
+    maxUnavailable: 0    # no pods allowed unavailable
 ```
 
-## Step-by-Step Troubleshooting Procedure
-### Phase 1: Basic Cluster Health
+With 2 replicas, `maxSurge=1, maxUnavailable=0`:
+1. Create 1 new pod → 3 pods (2 old + 1 new)
+2. New pod ready → kill 1 old → 2 pods (1 old + 1 new)
+3. Create 1 more new → 3 pods (1 old + 2 new)
+4. New pod ready → kill last old → 2 pods (2 new)
+
+**Zero downtime** if probes are correct.
+
+#### Commands
+
 ```bash
-# 1. Verify namespace and resources
-kubectl get ns
-kubectl get all -n student-api
-
-# 2. Check pod status
-kubectl get pods -n student-api -o wide --show-labels
-
-# 3. View recent events
-kubectl get events -n student-api --sort-by='.lastTimestamp'
+kubectl rollout status deployment/flask-api -n student-api    # watch progress
+kubectl rollout history deployment/flask-api -n student-api   # show revisions
+kubectl rollout undo deployment/flask-api -n student-api      # roll back to previous
+kubectl rollout undo deployment/flask-api --to-revision=2 -n student-api
+kubectl rollout restart deployment/flask-api -n student-api   # force restart all pods
+kubectl rollout pause deployment/flask-api -n student-api     # pause in-progress
+kubectl rollout resume deployment/flask-api -n student-api
 ```
 
-### Phase 2: Init Container Investigation
-```bash
-# 1. Check init container logs
-kubectl logs <pod> -n student-api -c db-migrations
+K8s keeps `revisionHistoryLimit` old ReplicaSets (default: 10) — rollback is just scaling old RS up + new RS down.
 
-# 2. If restarted, check previous logs
-kubectl logs <pod> -n student-api -c db-migrations --previous
+---
 
-# 3. Verify init container environment
-kubectl exec -n student-api -it <pod> -c db-migrations -- printenv
+### Autoscaling — HPA, VPA, Cluster Autoscaler
+
+Three layers of autoscaling:
+
+| Tool | What It Scales | Trigger |
+|------|---------------|---------|
+| **HPA (Horizontal Pod Autoscaler)** | Number of pod replicas | CPU, memory, custom metrics |
+| **VPA (Vertical Pod Autoscaler)** | Pod CPU/memory requests | Historical usage |
+| **Cluster Autoscaler** | Number of nodes | Pending pods (can't schedule due to resources) |
+| **KEDA** | Pods based on events | Queue depth, Kafka lag, Prometheus metrics |
+
+#### HPA — Horizontal Pod Autoscaler
+
+Scales `replicas` of a Deployment based on metrics. Most common usage: CPU%.
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: flask-api
+  namespace: student-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: flask-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70    # scale up when avg CPU > 70%
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300   # wait 5 min before scaling down (avoid flapping)
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100   # double pods at most per 60s
+        periodSeconds: 60
 ```
 
-### Phase 3: Main Application Investigation
+**Prerequisites:**
+- `metrics-server` installed (`minikube addons enable metrics-server`)
+- Pod must have `resources.requests` defined (HPA uses % of requests)
+
+**Apply:**
 ```bash
-# 1. Check main application logs
-kubectl logs <pod> -n student-api -c flask-api
-
-# 2. Verify application environment
-kubectl exec -n student-api -it <pod> -c flask-api -- printenv | grep -i POSTGRES
-
-# 3. Test database connectivity from application pod
-kubectl exec -n student-api -it <pod> -c flask-api -- bash -c 'echo "Testing DB connection..." && PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT 1;"'
+kubectl apply -f hpa.yaml
+kubectl get hpa -n student-api -w
 ```
 
-### Phase 4: Service and Networking
-```bash
-# 1. Verify services
-kubectl get svc -n student-api
-kubectl describe svc flask-api-service -n student-api
+**Custom metrics HPA:** scale based on Prometheus metrics (`flask_http_request_total` rate) using `prometheus-adapter` or KEDA.
 
-# 2. Check endpoints
-kubectl get endpoints -n student-api
+**HPA gotchas:**
+| Gotcha | Fix |
+|--------|-----|
+| HPA scales to 0 then back, oscillating | Tune `stabilizationWindowSeconds` (default 300s for scale-down) |
+| HPA never scales | metrics-server not installed; pod has no `resources.requests` |
+| HPA scales too aggressively | Add `behavior.scaleUp.policies` with `periodSeconds` |
+| HPA fights with `kubectl scale` | Don't manually scale a Deployment that has HPA |
 
-# 3. Test application health
-kubectl port-forward svc/flask-api-service -n student-api 5000:80 &
-curl -v http://localhost:5000/health
+#### VPA — Vertical Pod Autoscaler
+
+Recommends (or auto-applies) better CPU/memory **requests** based on actual usage.
+
+```yaml
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: flask-api
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: flask-api
+  updatePolicy:
+    updateMode: "Auto"   # or "Off" (recommend only), "Initial" (only on pod create)
+  resourcePolicy:
+    containerPolicies:
+    - containerName: flask-api
+      minAllowed: { cpu: 100m, memory: 128Mi }
+      maxAllowed: { cpu: 1, memory: 1Gi }
 ```
 
-## Quick Fix Commands
-### Environment Variable Updates
-```bash
-# Quick environment patch
-kubectl set env deployment/flask-api \
-  POSTGRES_HOST=postgres \
-  POSTGRES_PORT=5432 \
-  FLASK_APP=wsgi:app \
-  -n student-api
+**Modes:**
+- `Off` — recommendations only (safest, see in `kubectl describe vpa`)
+- `Initial` — set requests at pod creation
+- `Auto` — restart pods to apply new requests (disruptive!)
+
+**HPA + VPA together?** Not for the same metric. Use HPA on CPU + VPA in `Off` mode for memory recommendations.
+
+#### Cluster Autoscaler
+
+Scales the **number of nodes** in your cluster. Triggered when pods are `Pending` due to insufficient resources.
+
+In cloud:
+- AWS: `cluster-autoscaler` watches Auto Scaling Groups
+- GCP/Azure: native managed cluster autoscaler
+
+```yaml
+# Annotations on the deployment to inform autoscaler
+metadata:
+  annotations:
+    cluster-autoscaler.kubernetes.io/safe-to-evict: "false"   # data pods
 ```
 
-### Restart Deployment
-```bash
-# Restart with new configuration
-kubectl rollout restart deployment/flask-api -n student-api
+#### KEDA — Event-Driven Autoscaling
 
-# Monitor rollout status
-kubectl rollout status deployment/flask-api -n student-api
+For workloads driven by events (queues, Kafka, Prometheus), HPA on CPU isn't enough. KEDA provides 60+ "scalers":
+- Scale based on Kafka lag
+- Scale based on Redis queue length
+- Scale based on Prometheus query result
+- Scale to ZERO when no events (cost saver!)
 
+```yaml
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+spec:
+  scaleTargetRef:
+    name: flask-api
+  minReplicaCount: 0     # scale to zero!
+  maxReplicaCount: 100
+  triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus.observability.svc:9090
+      metricName: flask_request_rate
+      threshold: '100'
+      query: sum(rate(flask_http_request_total[1m]))
 ```
 
-### Secret Verification
-```bash
-# Check all secrets in namespace
-kubectl get secrets -n student-api
+---
 
-# Decode specific secret values
-kubectl get secret postgres-secret -n student-api -o jsonpath='{.data.POSTGRES_USER}' | base64 --decode
-kubectl get secret postgres-secret -n student-api -o jsonpath='{.data.POSTGRES_PASSWORD}' | base64 --decode
+### NetworkPolicies
+
+By default, **all pods can talk to all other pods**. NetworkPolicies are pod-level firewall rules.
+
+⚠️ **Only enforced if your CNI supports it.** Calico, Cilium, Weave do. Kindnet (minikube default) does not — policies apply but are ignored.
+
+**Default-deny (production foundation):**
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: student-api
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  # No rules = deny everything
 ```
 
-### Debug Pod Creation
-```bash
-# Create debug pod for testing
-kubectl run -it debug-pod --image=bitnami/kubectl --restart=Never -n student-api -- bash
+**Allow Flask → Postgres:**
+```yaml
+spec:
+  podSelector:
+    matchLabels: { app: postgres }
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - podSelector: { matchLabels: { app: flask-api } }
+    ports:
+    - protocol: TCP
+      port: 5432
+```
 
-# Test DNS resolution from debug pod
+**Critical gotcha — DNS:** if you apply default-deny egress, pods can't resolve DNS (can't reach CoreDNS). Always allow:
+
+```yaml
+egress:
+- to:
+  - namespaceSelector:
+      matchLabels: { kubernetes.io/metadata.name: kube-system }
+    podSelector:
+      matchLabels: { k8s-app: kube-dns }
+  ports:
+  - protocol: UDP
+    port: 53
+  - protocol: TCP
+    port: 53
+```
+
+---
+
+### RBAC
+
+| Object | Scope | Example |
+|--------|-------|---------|
+| **Role** | Namespace | "Read pods in student-api" |
+| **ClusterRole** | Cluster-wide | "Read pods in any namespace" |
+| **RoleBinding** | Bind Role to subject in a namespace | Grants developer the Role |
+| **ClusterRoleBinding** | Bind ClusterRole cluster-wide | ESO has this to manage secrets across all namespaces |
+
+In our project, **ESO ClusterRole** lets it read/write Secrets across all namespaces (it creates `postgres-secret` in `student-api`).
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: external-secrets-cluster-role
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "namespaces", "events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["external-secrets.io"]
+    resources: ["secretstores", "clustersecretstores", "externalsecrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+```
+
+---
+
+### Operators & CRDs
+
+#### What's an Operator?
+
+An app that **operates** other apps. Encodes domain knowledge ("how to back up Postgres", "how to rotate secrets") as code.
+
+**Pattern:** CRD (defines new resource type) + Custom Controller (watches for that resource and acts on it).
+
+#### CRD vs CR vs Operator
+
+| Term | Meaning |
+|------|---------|
+| **CRD** | The schema (`ExternalSecret`, `ClusterSecretStore`) |
+| **CR** | An instance of that CRD (your `vault-backend` is a CR) |
+| **Operator** | Controller that acts on CRs |
+
+#### ESO as an Example
+
+```
+1. You apply: kind: ExternalSecret, name: studentdb-secrets, spec: {data: [...]}
+2. ESO controller watches all ExternalSecret resources
+3. Sees the new resource, parses spec
+4. Calls Vault API: GET /v1/secret/data/studentdb (using vault-token)
+5. Vault returns: { POSTGRES_USER: "postgres", POSTGRES_PASSWORD: "postgres123" }
+6. Controller creates K8s Secret: name: postgres-secret, namespace: student-api
+7. Controller updates ExternalSecret status to "Ready: True"
+8. Every refreshInterval (1h), re-queries Vault and updates Secret if changed
+```
+
+#### Famous Operators
+
+| Operator | Manages |
+|----------|---------|
+| **Prometheus Operator** | Prometheus + ServiceMonitor + Alertmanager |
+| **cert-manager** | TLS certificates (Let's Encrypt) |
+| **CloudNativePG** | Postgres HA clusters |
+| **Strimzi** | Kafka clusters |
+| **ArgoCD** | GitOps deployments |
+| **Vault Operator** | Vault clusters |
+
+---
+
+## Commands Reference
+
+### Cluster
+
+| Sl. No | Description | Command | Why |
+|--------|-------------|---------|-----|
+| 1 | Start 3-node cluster | `minikube start --nodes=3 --driver=docker --cpus=2 --memory=2048` | Mimics multi-node production |
+| 2 | Stop cluster | `minikube stop` | Pauses; data persists |
+| 3 | Delete cluster | `minikube delete` | Wipes everything |
+| 4 | Cluster info | `kubectl cluster-info` | Control plane URL |
+| 5 | Get nodes | `kubectl get nodes -o wide` | IPs, status, version |
+| 6 | Label node | `kubectl label node <node> type=app --overwrite` | For node selectors |
+| 7 | Cordon (no new pods) | `kubectl cordon <node>` | Maintenance prep |
+| 8 | Drain (move pods off) | `kubectl drain <node> --ignore-daemonsets` | Maintenance |
+| 9 | Uncordon | `kubectl uncordon <node>` | Resume scheduling |
+
+### Pods
+
+| Sl. No | Description | Command | Why |
+|--------|-------------|---------|-----|
+| 1 | List pods | `kubectl get pods -n <ns>` | Status overview |
+| 2 | All namespaces | `kubectl get pods -A` | Cluster-wide |
+| 3 | Wide info | `kubectl get pods -o wide` | IPs, nodes |
+| 4 | Watch | `kubectl get pods -w` | Live updates |
+| 5 | Describe | `kubectl describe pod <pod>` | Events, mounts, env |
+| 6 | Logs | `kubectl logs <pod> -c <container>` | Multi-container |
+| 7 | Logs previous instance | `kubectl logs <pod> --previous` | Crashed container |
+| 8 | Tail logs | `kubectl logs -f <pod>` | Stream |
+| 9 | Exec into pod | `kubectl exec -it <pod> -- sh` | Shell |
+| 10 | Copy file in/out | `kubectl cp local.txt ns/<pod>:/path` | Bulk transfer |
+| 11 | Port-forward | `kubectl port-forward svc/<svc> 8080:80` | Local access |
+| 12 | Top (resource usage) | `kubectl top pods -n <ns>` | Requires metrics-server |
+| 13 | Delete pod | `kubectl delete pod <pod>` | Forces restart (ReplicaSet recreates) |
+| 14 | Force delete | `kubectl delete pod <pod> --force --grace-period=0` | When stuck Terminating |
+
+### Workloads
+
+| Sl. No | Description | Command | Why |
+|--------|-------------|---------|-----|
+| 1 | List deployments | `kubectl get deploy -n <ns>` | Status |
+| 2 | Scale | `kubectl scale deployment/flask-api --replicas=5 -n student-api` | Manual scale |
+| 3 | Rollout status | `kubectl rollout status deployment/flask-api -n student-api` | Watch deploy |
+| 4 | Rollout history | `kubectl rollout history deployment/flask-api -n student-api` | Revisions |
+| 5 | Rollback | `kubectl rollout undo deployment/flask-api -n student-api` | Revert to previous |
+| 6 | Restart all pods | `kubectl rollout restart deployment/flask-api -n student-api` | Re-read configmap/secret |
+| 7 | Edit live | `kubectl edit deployment/flask-api -n student-api` | Quick edit (avoid in prod) |
+| 8 | Apply YAML | `kubectl apply -f file.yaml` | Idempotent |
+| 9 | Delete from YAML | `kubectl delete -f file.yaml` | Tear down |
+
+### Networking
+
+| Sl. No | Description | Command | Why |
+|--------|-------------|---------|-----|
+| 1 | List services | `kubectl get svc -n <ns>` | Type, ClusterIP, ports |
+| 2 | Describe service | `kubectl describe svc <svc>` | Endpoints, selector |
+| 3 | List endpoints | `kubectl get endpoints <svc>` | Actual pod IPs backing the service |
+| 4 | DNS test from pod | `kubectl exec -n <ns> <pod> -- nslookup postgres` | Verify CoreDNS |
+| 5 | Ingress | `kubectl get ingress -A` | External routing |
+| 6 | NetworkPolicies | `kubectl get netpol -A` | Pod firewall rules |
+
+### Storage
+
+| Sl. No | Description | Command | Why |
+|--------|-------------|---------|-----|
+| 1 | List PVCs | `kubectl get pvc -n <ns>` | Storage requests |
+| 2 | List PVs | `kubectl get pv` | Cluster-wide volumes |
+| 3 | StorageClasses | `kubectl get sc` | Available provisioners |
+| 4 | Describe PVC | `kubectl describe pvc <pvc>` | Bound PV, events |
+
+### Debugging
+
+| Sl. No | Description | Command | Why |
+|--------|-------------|---------|-----|
+| 1 | Events sorted | `kubectl get events --sort-by='.lastTimestamp' -A` | Recent activity |
+| 2 | Describe everything | `kubectl describe <kind>/<name>` | Full state |
+| 3 | API resources | `kubectl api-resources` | See all CRDs/types |
+| 4 | Explain field | `kubectl explain pod.spec.containers` | Schema docs |
+| 5 | Get all in namespace | `kubectl get all -n <ns>` | Quick overview |
+| 6 | Dry run | `kubectl apply -f file.yaml --dry-run=client -o yaml` | Preview |
+
+---
+
+## Troubleshooting
+
+### Issues We Hit in This Session
+
+| Sl. No | Issue | Cause | Fix |
+|--------|-------|-------|-----|
+| 1 | Vault pod 0/1 NotReady | Vault always starts sealed; readiness probe fails | Run `vault operator init` then `unseal` × 3 |
+| 2 | ESO `OutOfSync, Missing` | CRDs not installed | `helm install external-secrets ... --set installCRDs=true` |
+| 3 | ESO `InvalidProviderConfig: cannot get vault-token secret` | Secret not created in `external-secrets` namespace | `kubectl create secret generic vault-token --from-literal=token=<root-token> -n external-secrets` |
+| 4 | `ClusterSecretStore is not ready` cached, ExternalSecret never re-tries | Default refresh is 1h | `kubectl annotate externalsecret <name> force-sync=$(date +%s) --overwrite` |
+| 5 | `no matches for kind "ClusterSecretStore" in version "external-secrets.io/v1beta1"` | Chart uses different API version than installed CRDs | Check `kubectl get crd clustersecretstores.external-secrets.io -o jsonpath='{.spec.versions[*].name}'`; update YAML to match |
+| 6 | Postgres / Vault PVC `permission denied` on minikube | hostpath provisioner doesn't honor `fsGroup` chown | SSH to node and chown: `minikube ssh -n minikube-m03 "sudo chown -R 10001:10001 /var/hostpath-provisioner/observability/storage-loki-0"` |
+| 7 | `port-forward: connection refused: 127.0.0.1:5000` | Gunicorn binds to `127.0.0.1` (loopback) | Add `GUNICORN_CMD_ARGS=--bind=0.0.0.0:5000` env var |
+| 8 | Flask responds 404 for all /students | DB tables exist but empty | Run `python /api/app/seed.py` via `kubectl exec` |
+| 9 | `seed.py: No such file or directory` in container | Older image; seed.py wasn't bundled | `kubectl cp` to copy in, or rebuild image with seed.py in `app/` |
+| 10 | `minikube service` URL unreliable on Mac Docker driver | Tunnel disconnects | Use `kubectl port-forward` instead |
+| 11 | Deleting `application.yaml` removed namespace | Namespace defined inline in the YAML | Recreate ns + redeploy postgres + ESO secret |
+| 12 | Pod stuck `Pending` | Insufficient resources OR no node matches selector | `kubectl describe pod` → look at Events; verify node labels |
+| 13 | `helm install` fails: namespace not found | Namespace doesn't exist | Add `--create-namespace` to helm install |
+| 14 | Namespace stuck `Terminating` | Resource has finalizer waiting for a controller that's gone | `kubectl patch <resource> -p '{"metadata":{"finalizers":null}}' --type=merge` |
+| 15 | Image `ImagePullBackOff` | Wrong tag or private registry without imagePullSecret | `kubectl describe pod` → events; verify tag exists |
+
+### General Pod Lifecycle Debugging
+
+| Symptom | Likely Cause | First Check |
+|---------|-------------|-------------|
+| `Pending` | No matching node, insufficient resources | `kubectl describe pod` → Events |
+| `ContainerCreating` | Image pull, volume mount, secret/configmap missing | `kubectl describe pod` → Events |
+| `CrashLoopBackOff` | App crashes on startup | `kubectl logs <pod> --previous` |
+| `Error` | Pod terminated unsuccessfully | Logs + describe |
+| `OOMKilled` | Hit memory limit | Increase `resources.limits.memory` |
+| `Evicted` | Node out of disk/memory | `kubectl get events -A \| grep Evict` |
+| `ImagePullBackOff` | Wrong image tag, private registry | Verify image exists; add `imagePullSecret` |
+| `0/1 Running` (not Ready) | Readiness probe failing | `kubectl describe pod` → probe section; check `/health` endpoint |
+
+### CrashLoopBackOff — Step-by-Step
+
+```bash
+# 1. Get the latest crash logs
+kubectl logs <pod> --previous
+
+# 2. Check init container logs separately
+kubectl logs <pod> -c <init-container>
+
+# 3. Inspect events
+kubectl describe pod <pod> | grep -A 20 Events
+
+# 4. Verify env vars are populated correctly
+kubectl exec -it <pod> -- env | sort
+
+# 5. Verify mounted secrets/configmaps
+kubectl exec -it <pod> -- ls /etc/secrets
+
+# 6. Run an interactive shell with the same image
+kubectl run debug --rm -it --image=<your-image> -- sh
+```
+
+### Networking Debug
+
+```bash
+# Pod-to-pod from inside a debug pod
+kubectl run debug --rm -it --image=nicolaka/netshoot -- bash
+# inside:
 nslookup postgres.student-api.svc.cluster.local
+nc -zv postgres.student-api.svc.cluster.local 5432
+curl -v http://flask-api-service.student-api.svc.cluster.local
 
-# Test database connectivity
-PGPASSWORD=your_password psql -h postgres -U your_user -d your_db -c "\dt"
+# Verify service has endpoints (= backing pods)
+kubectl get endpoints postgres -n student-api
+
+# Check kube-proxy iptables rules (advanced)
+kubectl exec -n kube-system <kube-proxy-pod> -- iptables-save | grep <service-cluster-ip>
+
+# CoreDNS status
+kubectl get pods -n kube-system -l k8s-app=kube-dns
+kubectl logs -n kube-system -l k8s-app=kube-dns
 ```
 
-### Common Error Messages Reference
-| **Error Message**                                              | **Likely Cause**                         | **Solution**                                          |
-| -------------------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------- |
-| **could not translate host name "postgres"**                   | DNS/service name mismatch                | Create `postgres` service or update `POSTGRES_HOST`   |
-| **password authentication failed**                             | Wrong credentials in secret              | Verify `ExternalSecret` and secret content            |
-| **ValueError: invalid literal for int() with base 10: 'tcp:'** | Malformed `POSTGRES_HOST`/`PORT`         | Remove `tcp:` prefix from environment variables       |
-| **Error: Could not import 'wsgi'**                             | Wrong `FLASK_APP` or working directory   | Set `FLASK_APP=wsgi:app` and verify working directory |
-| **ImagePullBackOff**                                           | Bad image tag or registry authentication | Check image name and `imagePullSecrets`               |
-| **CrashLoopBackOff with OOMKilled**                            | Out of memory                            | Increase memory limits in deployment                  |
+---
 
+## Interview Q&A
 
+### Architecture & Concepts
 
+| Q | A |
+|---|---|
+| **What's a Pod?** | The smallest deployable unit. Wraps one or more containers that share network namespace (localhost), storage volumes, and lifecycle. |
+| **Pod vs Container?** | Container = a process. Pod = a wrapper around 1+ containers that share resources. K8s schedules pods, not containers. |
+| **What's a Deployment?** | A workload controller that manages a ReplicaSet, which manages Pods. Adds rolling updates, rollbacks, and replica count management. |
+| **Deployment vs StatefulSet?** | Deployment = stateless, random pod names, shared PVC. StatefulSet = stateful, ordered names (`pg-0`, `pg-1`), per-pod PVC, stable DNS. |
+| **What's a DaemonSet?** | Ensures one pod per node. Used for per-node agents (logging, monitoring, CNI). Scales automatically as nodes join/leave. |
+| **What's a Job vs CronJob?** | Job = run a pod to completion (one-shot). CronJob = run a Job on a schedule. |
+| **What's a namespace?** | Logical isolation of resources within a cluster. Used for multi-tenancy, RBAC scoping, resource quotas, and DNS scoping. |
+| **What's a ServiceAccount?** | Identity for processes inside pods. Used for RBAC and authenticating to the K8s API. Distinct from User accounts (which are for humans). |
+
+### Networking
+
+| Q | A |
+|---|---|
+| **How does pod-to-pod communication work?** | Each pod gets a unique IP from CNI. Routes are set up so pods on different nodes can reach each other directly. No NAT involved. |
+| **How does service discovery work?** | CoreDNS in `kube-system` resolves service names to ClusterIPs. Pods get its IP in `/etc/resolv.conf`. Search domains let `postgres` resolve to `postgres.<ns>.svc.cluster.local`. |
+| **What does kube-proxy do?** | Watches API server for Services/Endpoints, programs iptables (or IPVS) on every node so traffic to ClusterIP gets DNATed to a pod IP. |
+| **ClusterIP vs NodePort vs LoadBalancer?** | ClusterIP = internal only. NodePort = exposed on every node IP at 30000-32767. LoadBalancer = cloud LB provisioned. |
+| **What's an Ingress?** | L7 routing rules (HTTP host/path) implemented by an Ingress Controller (nginx, Traefik, ALB). Replaces multiple LoadBalancer services. |
+| **What's a Headless Service?** | Service with `clusterIP: None`. DNS returns pod IPs directly (not a single VIP). Used by StatefulSets for per-pod DNS. |
+| **What's CNI?** | Container Network Interface — the spec for K8s networking plugins. Implementations: Calico, Cilium, Flannel, Kindnet. Assigns pod IPs and sets up cross-node routing. |
+| **What's the difference between iptables and IPVS modes for kube-proxy?** | iptables = linear rules, fine up to ~1000 services. IPVS = kernel hash-table load balancing, scales to tens of thousands of services. |
+| **How does external traffic reach a pod?** | External LB → NodePort or Ingress controller → kube-proxy DNATs → pod. Or via ALB Ingress in AWS (ALB directly to pod IPs). |
+
+### Storage
+
+| Q | A |
+|---|---|
+| **PV vs PVC?** | PV = the actual storage chunk. PVC = a request for storage. PVC binds to a matching PV (or triggers dynamic provisioning). |
+| **What's a StorageClass?** | Defines HOW to provision storage — which provisioner, params, reclaim policy. PVCs reference a StorageClass to get matching PVs created on demand. |
+| **Access modes?** | RWO = one node RW. RWX = many nodes RW (NFS/EFS). ROX = many nodes RO. RWOP = one pod RW. |
+| **Reclaim policies?** | Retain (keep PV after PVC deleted), Delete (remove PV + storage), Recycle (deprecated). |
+| **How do you back up a stateful app's data?** | Volume snapshots (CSI snapshots), Velero (cluster-wide backup), application-level dumps (pg_dump) to S3. |
+| **How do you migrate a PVC to a new StorageClass?** | Take a snapshot of the original PV; create a new PVC with new StorageClass from the snapshot; update Deployment to use the new PVC. |
+
+### Workloads
+
+| Q | A |
+|---|---|
+| **What's the default rollout strategy?** | RollingUpdate with `maxSurge=25%`, `maxUnavailable=25%`. Old pods replaced gradually. Zero downtime if probes are correct. |
+| **When would you use Recreate strategy?** | When the app can't run two versions simultaneously — e.g., schema migration that breaks the old version. |
+| **What are init containers good for?** | One-shot setup: run migrations, fix permissions, wait for dependencies. Run before main containers, in order, must succeed. |
+| **What's a sidecar?** | A container that runs alongside the main one for the lifetime of the pod. Use cases: log shipper, service mesh proxy (Envoy), auth proxy. |
+| **What's a static pod?** | A pod managed directly by kubelet (not API server). Manifest lives in `/etc/kubernetes/manifests`. Used for control plane components. |
+
+### Probes & Lifecycle
+
+| Q | A |
+|---|---|
+| **Liveness vs Readiness vs Startup probe?** | Liveness — restart if failing. Readiness — remove from Service if failing. Startup — gate liveness during slow startup. |
+| **When would readiness without liveness make sense?** | App that auto-recovers from transient failures but shouldn't receive traffic during them. Restart wouldn't help. |
+| **What's a graceful shutdown?** | When K8s sends SIGTERM, the app should stop accepting new requests, finish in-flight ones, then exit. K8s waits `terminationGracePeriodSeconds` (default 30s) before SIGKILL. |
+| **What's a PreStop hook?** | A command/HTTP hook K8s runs **before** sending SIGTERM. Useful for de-registering from a load balancer or notifying peers. |
+
+### Autoscaling
+
+| Q | A |
+|---|---|
+| **HPA vs VPA?** | HPA scales **number of pods** based on CPU/memory/custom metrics. VPA scales **per-pod resources** (CPU/memory requests). Don't use both on the same metric. |
+| **What's required for HPA to work?** | metrics-server installed; target Deployment has `resources.requests` defined; HPA references the right metric. |
+| **How does HPA decide when to scale?** | Sample interval (default 15s). If `currentMetric/targetMetric * currentReplicas > maxReplicas` → scale up; less → scale down. Uses stabilization windows to avoid flapping. |
+| **What's KEDA?** | Event-driven autoscaler. 60+ scalers (Kafka lag, Redis queue, Prometheus query). Can scale to **zero** (HPA can't). Great for event-driven workloads. |
+| **What's the Cluster Autoscaler?** | Adds/removes **nodes** when pods can't be scheduled (Pending) or nodes are underutilized. Works with cloud ASGs. |
+| **HPA scaling lag — how to reduce?** | Tune `behavior.scaleUp.stabilizationWindowSeconds=0`; use a smaller `--horizontal-pod-autoscaler-sync-period` (default 15s); ensure metrics-server has fresh data. |
+
+### Secrets & Security
+
+| Q | A |
+|---|---|
+| **K8s Secrets vs Vault?** | K8s Secrets = base64 (NOT encrypted by default), stored in etcd. Vault = encrypted, audited, with rotation, fine-grained policies. ESO bridges them. |
+| **How do you encrypt K8s Secrets at rest?** | Configure etcd encryption-at-rest with EncryptionConfiguration (AES-CBC, KMS provider). Or use a sealed-secrets / SOPS / Vault layer. |
+| **What's RBAC?** | Role-Based Access Control. `Role`/`ClusterRole` define permissions; `RoleBinding`/`ClusterRoleBinding` grant them to subjects (User, Group, ServiceAccount). |
+| **What's PodSecurity?** | Pod Security Standards (PSS): privileged / baseline / restricted. Enforced via Pod Security admission controller. Replaces deprecated PodSecurityPolicy. |
+| **Network Policies — when don't they work?** | Only enforced if your CNI supports it (Calico, Cilium, Weave). Flannel/Kindnet do not. |
+| **How would you rotate a Vault token used by ESO?** | Generate new token in Vault → `kubectl create secret generic vault-token --from-literal=token=<new>` (overwrites) → ESO picks it up at next sync. |
+
+### Operators & CRDs
+
+| Q | A |
+|---|---|
+| **What's a CRD?** | Custom Resource Definition — extends K8s API with new resource types. Once installed, you can `kubectl apply` instances of that type. |
+| **CRD vs CR vs Operator?** | CRD = schema (`ExternalSecret`). CR = instance of that CRD. Operator = controller that watches and reconciles CRs. |
+| **Why use an operator over a Helm chart?** | Helm = one-shot templating. Operator = continuous reconciliation, automated ops (backup, failover, scaling). Operators encode domain logic. |
+| **Give an example of an operator from this project.** | ESO — watches `ExternalSecret` resources and continuously syncs from Vault to K8s Secrets. Vault Operator (production) — manages Vault clusters with auto-init and unseal. |
+| **What's an admission webhook?** | HTTPS endpoint K8s calls during resource create/update to validate (`ValidatingWebhook`) or modify (`MutatingWebhook`). ESO uses one to validate ExternalSecret resources. |
+
+### Real Production Scenarios
+
+| Q | A |
+|---|---|
+| **A pod is in CrashLoopBackOff. Walk me through your debugging.** | (1) `kubectl describe pod` for events. (2) `kubectl logs --previous` for crash output. (3) Check init container logs separately. (4) Verify env vars: `kubectl exec ... -- env`. (5) Verify mounted secrets exist. (6) Run debug pod with same image. |
+| **A Service is unreachable. What do you check?** | DNS (`nslookup` from a debug pod), Service has Endpoints (`kubectl get ep`), correct selector (`kubectl describe svc`), Pod readiness probe passing, NetworkPolicy not blocking, port matches container port, app binding to 0.0.0.0. |
+| **How do you do zero-downtime deployments?** | RollingUpdate strategy + readiness probes that ONLY return ready when app can handle requests + `maxUnavailable=0` + PreStop hook for graceful shutdown + `terminationGracePeriodSeconds` long enough to drain. |
+| **Pods are pending — what's wrong?** | `kubectl describe pod` Events: insufficient CPU/memory, PVC unbound, no node matching nodeSelector/affinity, taints not tolerated. |
+| **How do you handle migrations in K8s?** | Init container runs `flask db upgrade` before the main container. Guarantees schema is up-to-date before app accepts traffic. For complex migrations: a separate Job before deploying. |
+| **What if migration fails?** | Init container exits non-zero → main container never starts → pod status shows init failure. Fix migration, redeploy. |
+| **How do you upgrade a stateful app like Postgres?** | StatefulSet with rolling update. Take backup first. Test in staging. Use partition strategy for canary (e.g., update only postgres-2 first). |
+| **How do you scale based on custom metrics?** | KEDA with a Prometheus scaler, OR HPA with `prometheus-adapter` (registers Prometheus metrics as K8s metrics). |
+| **A namespace is stuck Terminating. What do you do?** | Find the resource with stuck finalizers: `kubectl api-resources --verbs=list --namespaced -o name \| xargs -n 1 kubectl get -n <ns>`. Patch finalizers to null: `kubectl patch <resource> -p '{"metadata":{"finalizers":null}}' --type=merge`. |
+
+---
+
+## STAR Stories
+
+### Story 1: "Tell me about a time you debugged pod-to-pod connectivity."
+
+**Situation:** After deploying our Flask app to K8s, port-forwarding to the Service returned `Connection reset by peer`. Pods showed `1/1 Running`, no errors in logs.
+
+**Task:** Diagnose why a Running pod was unreachable.
+
+**Action:**
+1. Verified Service had Endpoints: `kubectl get endpoints flask-api-service` — endpoints were listed, so Service knew about the pods.
+2. Verified port-forward was hitting the right Service: `kubectl describe svc flask-api-service` — port 80 → targetPort 5000, correct.
+3. Curled the pod IP directly from a debug pod (`nicolaka/netshoot`): also failed.
+4. Checked Gunicorn logs more carefully — saw `Listening at http://127.0.0.1:8000`. **Loopback only.**
+5. Set `GUNICORN_CMD_ARGS=--bind=0.0.0.0:5000` env var in the Deployment.
+6. Rolled the deployment; port-forward worked immediately.
+
+**Result:** API reachable. Same lesson applies in cloud — apps must bind to `0.0.0.0` for K8s Service routing to work.
+
+**Takeaway:** "Pod Running" does NOT mean "pod reachable." Always verify the app is bound to the right interface (0.0.0.0, not 127.0.0.1).
+
+---
+
+### Story 2: "Tell me about a time you debugged a stuck namespace."
+
+**Situation:** During cleanup, I deleted `k8s/external-secrets-store.yaml` to recreate the ExternalSecret. The `student-api` namespace went into `Terminating` and never finished — blocking other deploys.
+
+**Task:** Force the namespace to finish terminating without losing other resources.
+
+**Action:**
+1. `kubectl get ns student-api -o json` showed condition `SomeFinalizersRemain: externalsecrets.external-secrets.io/externalsecret-cleanup`.
+2. ExternalSecret had a finalizer, but the ESO controller had already been uninstalled — so the finalizer would never be removed by the controller.
+3. Patched the finalizer to null: `kubectl patch externalsecret studentdb-secrets -n student-api -p '{"metadata":{"finalizers":null}}' --type=merge`.
+4. Namespace immediately finished terminating.
+
+**Result:** Unblocked the cleanup. Documented in our runbook: "If you uninstall an operator, delete its CRs first; otherwise their finalizers strand resources."
+
+**Takeaway:** Finalizers are powerful but can deadlock when the controller that owns them is gone. Always order: delete CRs → uninstall controller → uninstall CRDs.
+
+---
+
+### Story 3: "Tell me about a time you fixed an unbootable pod due to PVC permissions."
+
+**Situation:** Deployed Vault to minikube. Pod CrashLoopBackOff with `mkdir /vault/data: permission denied` even though we set `securityContext: { runAsUser: 100, fsGroup: 1000 }`.
+
+**Task:** Fix Vault startup without disabling security context.
+
+**Action:**
+1. Inspected pod spec — confirmed `fsGroup: 1000` was set on PodSecurityContext.
+2. Realized minikube's hostpath provisioner doesn't honor `fsGroup` chown for newly-created PVs.
+3. SSHed into the node where Vault was scheduled: `minikube ssh -n minikube-m03`.
+4. Located the PV directory: `/var/hostpath-provisioner/vault/vault-pvc/`.
+5. `sudo chown -R 100:1000 /var/hostpath-provisioner/vault/vault-pvc/`.
+6. Deleted the Vault pod; restarted with same securityContext — Vault initialized cleanly.
+
+**Result:** Vault came up. Long-term fix: add an `initContainer` that runs `chown -R 100:1000 /vault/data` as root before Vault starts (works on any K8s, not just minikube).
+
+**Takeaway:** `fsGroup` works in cloud (EBS, GCE PD) but not always on local provisioners. Init containers as root are the portable fix for permission setup.
+
+---
+
+### Story 4: "Tell me about a time you implemented HPA in production."
+
+**Situation:** Our Flask API was over-provisioned at 10 replicas during off-peak hours. CFO wanted cost reduction without sacrificing peak performance.
+
+**Task:** Implement autoscaling that handles 10x traffic spikes but scales down to save money at night.
+
+**Action:**
+1. Confirmed `metrics-server` was running and pods had `resources.requests` set (HPA needs both).
+2. Wrote HPA: `minReplicas: 2`, `maxReplicas: 20`, target CPU 70%, target memory 80%.
+3. Tuned scale-down behavior: `stabilizationWindowSeconds: 600` (10 min) — avoid flapping during traffic dips.
+4. Tuned scale-up: `policies: [{type: Percent, value: 100, periodSeconds: 60}]` — double pods every minute when needed.
+5. Load-tested with Locust at 10x normal traffic — HPA scaled to 18 in ~2 minutes.
+6. Watched scale-down at night (off-peak); reached 2 replicas after 10 min stabilization window.
+
+**Result:** Compute cost dropped 40% on average. Peak-hour latency unchanged. Set up a Grafana dashboard tracking `hpa_current_replicas` so we could spot anomalies.
+
+**Takeaway:** HPA + good probes + cluster autoscaler = elastic infrastructure. Stabilization windows are critical to avoid flap loops; tune scale-up aggressive, scale-down patient.
+
+---
+
+## Production Hardening
+
+### Cluster
+
+| Area | Current | Production |
+|------|---------|-----------|
+| **Cluster** | minikube (single host) | EKS / GKE / AKS — managed control plane, multi-AZ |
+| **Nodes** | 3 minikube nodes | Node groups per workload class (app/db/infra), spot for stateless |
+| **Networking** | Kindnet | Calico / Cilium — supports NetworkPolicy, eBPF observability |
+| **DNS** | CoreDNS default | CoreDNS HPA, NodeLocal DNSCache for performance |
+| **Storage** | hostpath | EBS gp3 (cloud) with CSI driver, snapshots configured |
+| **Auth** | minikube admin | OIDC SSO (Google/Okta), short-lived tokens |
+| **RBAC** | Default | Least-privilege: per-team Roles, no cluster-admin for humans |
+
+### Workload
+
+| Area | Current | Production |
+|------|---------|-----------|
+| **Probes** | Some pods | Liveness + readiness on every workload; startup for slow apps |
+| **Resources** | Some have limits | Every pod has requests + limits; quotas per namespace |
+| **HPA** | Not deployed | HPA on app workloads; Cluster Autoscaler on nodes |
+| **PDB (PodDisruptionBudget)** | None | `minAvailable` for stateful apps to survive node drain |
+| **Affinity** | Simple nodeSelector | Pod anti-affinity to spread replicas across AZs |
+| **Image pull policy** | Default | `Always` for `:latest`; `IfNotPresent` for SHA-pinned |
+| **Image source** | DockerHub | Private registry (ECR/GCR/ACR); image scanning in CI |
+
+### Security
+
+| Area | Current | Production |
+|------|---------|-----------|
+| **Secrets** | Vault + ESO | Same, plus auto-unseal with cloud KMS |
+| **NetworkPolicies** | None | Default-deny + explicit allow rules |
+| **PodSecurity** | Default | Enforce `restricted` Pod Security Standard via PSA admission |
+| **Image signing** | None | Cosign + admission controller (Sigstore) |
+| **Audit logging** | Default | Audit policy → SIEM (CloudWatch, Splunk) |
+| **Service mesh** | None | Istio / Linkerd for mTLS, traffic policies, observability |
+
+### Observability (covered in Module 7)
+
+| Area | Production |
+|------|-----------|
+| Metrics | Prometheus + Grafana |
+| Logs | Loki + Promtail |
+| Traces | Jaeger / Tempo + OpenTelemetry SDK in apps |
+| Alerts | Alertmanager → Slack / PagerDuty |
+
+---
+
+## Cloud Mapping
+
+### Minikube → Cloud Managed K8s
+
+| minikube | AWS EKS | GCP GKE | Azure AKS |
+|----------|---------|---------|-----------|
+| `minikube start --nodes=3` | EKS cluster + 3 worker nodes (managed node group) | GKE Autopilot or Standard | AKS cluster |
+| Single host | Multi-AZ control plane | Regional cluster | Availability Zone-based |
+| hostpath PV | EBS via CSI | Persistent Disk | Azure Disk |
+| LoadBalancer | Network LB / ALB | Cloud LB | Standard LB |
+| Ingress (manual install) | AWS Load Balancer Controller (ALB) | GKE Ingress (Cloud LB) | App Gateway Ingress Controller |
+| ServiceAccount | IRSA (IAM Roles for Service Accounts) | Workload Identity | Pod-managed identity |
+| ConfigMap | Same | Same | Same |
+| Secret | Same; AWS Secrets Manager via Secrets Store CSI | Secret Manager via CSI | Key Vault via CSI |
+| Static node | Auto Scaling Group | Managed Instance Group | VM Scale Set |
+
+### Why managed K8s?
+
+- Control plane managed (etcd, API server, scheduler) — you only manage workloads
+- Multi-AZ HA out of the box
+- Integrated with cloud IAM (no need to manage K8s users separately)
+- Auto-upgrades, security patches handled
+- Cost: $73/month per cluster (EKS) on top of node costs
+
+---
+
+## Reference Links (Internal)
+
+- Cluster setup notes: this doc
+- Vault manifest: [k8s/vault.yaml](../k8s/vault.yaml)
+- ESO store + secrets: [k8s/external-secrets-store.yaml](../k8s/external-secrets-store.yaml)
+- Database: [k8s/database.yaml](../k8s/database.yaml)
+- Application: [k8s/application.yaml](../k8s/application.yaml)
+- Helm charts (Module 6): [helm/](../helm/)
+- ArgoCD apps (Module 6): [argocd/](../argocd/)

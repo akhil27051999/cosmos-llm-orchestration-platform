@@ -1,1394 +1,312 @@
-# Student-REST-API Webserver Development
+# Module 1: Local Application Setup
+
+> **Goal:** Get the Flask Student Management REST API running locally — Python venv, dependencies, PostgreSQL, migrations, seeding, and verification.
+
+> **Why this matters:** Every DevOps/SRE workflow starts with reproducing the dev environment. If you can't run it locally, you can't containerize it, deploy it, or debug it.
+
+---
+
+## Table of Contents
+
+1. [Project Overview](#project-overview)
+2. [Architecture](#architecture)
+3. [Tech Stack](#tech-stack)
+4. [Prerequisites](#prerequisites)
+5. [Setup Walkthrough](#setup-walkthrough)
+6. [API Endpoints](#api-endpoints)
+7. [Commands Reference](#commands-reference)
+8. [Troubleshooting](#troubleshooting)
+9. [Interview Q&A](#interview-qa)
+10. [STAR Stories](#star-stories)
+11. [Production Hardening](#production-hardening)
+
+---
 
 ## Project Overview
 
-A lightweight Flask REST API starter project for CRUD operations (student records example). This README shows how to initialize the project, install dependencies, configure version control, and push to GitHub.
+A REST API that manages student records (CRUD operations on a `Student` model with fields: `id`, `name`, `domain`, `email`, `gpa`). Used as the foundation for all downstream DevOps work — containerization, orchestration, observability, GitOps.
+
+**Why Flask?** Lightweight, easy to instrument, ideal for demonstrating end-to-end DevOps workflows without the noise of large frameworks.
+
+---
+
+## Architecture
+
+```
+   ┌─────────────┐      ┌────────────────┐      ┌──────────────┐
+   │   Client    │─────►│  Flask App     │─────►│  PostgreSQL  │
+   │ (curl/HTTP) │ HTTP │ (Gunicorn:5000)│ SQLA │   :5432      │
+   └─────────────┘      └────────────────┘      └──────────────┘
+                              │
+                              ▼
+                        ┌──────────────┐
+                        │ Alembic      │
+                        │ migrations   │
+                        └──────────────┘
+```
+
+- **Flask** serves HTTP routes
+- **Flask-SQLAlchemy** is the ORM
+- **Flask-Migrate (Alembic)** manages DB schema migrations
+- **Gunicorn** is the WSGI server (production-grade, replaces `flask run` for prod)
+- **PostgreSQL** is the persistence layer
+
+---
+
+## Tech Stack
+
+| Layer | Tool | Purpose |
+|-------|------|---------|
+| Language | Python 3.10+ | Application runtime |
+| Framework | Flask 3.1 | HTTP framework |
+| ORM | Flask-SQLAlchemy 3.1 | Database abstraction |
+| Migrations | Flask-Migrate (Alembic) 4.1 | Schema versioning |
+| WSGI Server | Gunicorn 23 | Production HTTP server |
+| Database | PostgreSQL 15 | Persistence |
+| Driver | psycopg2-binary | Postgres Python driver |
+| Testing | pytest 8.4 + pytest-flask | Unit + integration tests |
+| Config | python-dotenv | Loads `.env` files |
+
+---
 
 ## Prerequisites
 
-- Python 3.8+ (adjust to your project's minimum)
-- git
-- Access to a PostgreSQL instance (if you plan to use PostgreSQL)
-
-## Project Setup
-
-### Create Project Structure
-
-Run the following in your terminal:
-
-```bash
-# Create project directory and navigate to it
-mkdir Flask-REST-API && cd Flask-REST-API
-
-# Create virtual environment
-python3 -m venv .venv
-```
-
-### Activate Virtual Environment
-
-```bash
-# On Linux / macOS
-source .venv/bin/activate
-
-# On Windows (PowerShell)
-.venv\Scripts\Activate
-```
-
-Note: Your shell prompt should now show the `.venv` prefix.
-
-## Install Packages
-
-Install the packages required for development and testing:
-
-```bash
-pip install Flask Flask-SQLAlchemy Flask-Migrate psycopg2-binary python-dotenv pytest pytest-flask pytest-dotenv gunicorn
-```
-
-### Verify Installation
-
-```bash
-# Check Python version
-python3 --version
-
-# List installed packages
-pip list
-```
-
-### Generate requirements.txt
-
-Freeze dependencies:
-
-```bash
-pip freeze > requirements.txt
-```
-
-### Expected requirements.txt
-
-The following is the expected dependencies snapshot used for the project (for reference):
-
-```
-alembic==1.16.4
-blinker==1.9.0
-click==8.2.1
-Flask==3.1.1
-Flask-Migrate==4.1.0
-Flask-SQLAlchemy==3.1.1
-greenlet==3.2.4
-gunicorn==23.0.0
-iniconfig==2.1.0
-itsdangerous==2.2.0
-Jinja2==3.1.6
-Mako==1.3.10
-MarkupSafe==3.0.2
-packaging==25.0
-pluggy==1.6.0
-psycopg2-binary==2.9.10
-Pygments==2.19.2
-pytest==8.4.1
-pytest-dotenv==0.5.2
-pytest-flask==1.3.0
-python-dotenv==1.1.1
-SQLAlchemy==2.0.43
-typing_extensions==4.14.1
-Werkzeug==3.1.3
-```
-
-(Your actual `requirements.txt` may differ depending on the latest package versions — run `pip freeze` to capture your environment.)
-
-## Package Purpose Reference
-
-| Package               | Purpose                       | Required For                       |
-|-----------------------|-------------------------------|-------------------------------------|
-| Flask                 | Web framework                 | Core application                    |
-| Flask-SQLAlchemy      | ORM integration               | Database operations                 |
-| Flask-Migrate         | Database migrations           | Schema versioning                   |
-| psycopg2-binary       | PostgreSQL adapter            | PostgreSQL database                 |
-| python-dotenv         | Environment variables         | Configuration management            |
-| pytest                | Testing framework             | Application testing                 |
-| pytest-flask          | Flask test helpers            | Flask-specific testing              |
-| pytest-dotenv         | Test env variables support    | Testing with .env files             |
-| gunicorn              | WSGI server                   | Production deployment               |
-
-## Version Control Setup
-
-Initialize a Git repository and create a `.gitignore`.
-
-```bash
-git init
-```
-
-### Create .gitignore
-
-Create a `.gitignore` in the project root with contents like the following:
-
-```gitignore
-# Virtual environments
-.venv/
-venv/
-
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Environment variables
-.env
-.env.local
-
-# Database
-*.db
-*.sqlite3
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-
-# Logs
-*.log
-
-# Temporary files
-tmp/
-temp/
-```
-
-### Initial Commit
-
-```bash
-git add .
-git commit -m "Initial commit: Flask REST API project setup"
-```
-
-## GitHub Repository Setup
-
-Create a repository on GitHub (example name: `student-crud-api`). Do NOT initialize with a README on GitHub if you already have local files.
-
-### Push to GitHub
-
-Replace `your-username` with your GitHub username and run:
-
-```bash
-# Add remote origin
-git remote add origin https://github.com/your-username/student-crud-api.git
-
-# Rename default branch to main
-git branch -M main
-
-# Push to GitHub
-git push -u origin main
-```
-
-## Project Maintenance
-
-- To add a new package:
-
-```bash
-pip install <package-name>
-pip freeze > requirements.txt
-```
-
-- To update dependencies, update installed packages and re-freeze.
-
-## Contributing
-
-1. Fork the repo.
-2. Create a feature branch: `git checkout -b feat/your-feature`.
-3. Make changes, add tests.
-4. Commit and push: `git push origin feat/your-feature`.
-5. Open a Pull Request.
-
-# PostgreSQL Setup Guide for Flask Application (Ubuntu)
-
-This document contains step-by-step instructions to install, configure, and verify PostgreSQL for use with a Flask application on Ubuntu. It includes commands, configuration examples, troubleshooting tips, a quick setup script, and security recommendations.
-
-## Prerequisites
-
-- Ubuntu system with sudo access
-- Internet connection
-- (Optional) PostgreSQL client tools installed on your local machine if connecting remotely
+| Tool | Why | Install (macOS) |
+|------|-----|-----------------|
+| Python 3.10+ | App runtime | `brew install python` |
+| PostgreSQL 15 | DB | `brew install postgresql@15 && brew services start postgresql@15` |
+| Git | Source control | `brew install git` |
 
 ---
 
-## 1. PostgreSQL Installation
+## Setup Walkthrough
 
-### Install PostgreSQL
-
-```bash
-sudo apt update
-sudo apt install postgresql postgresql-contrib
-```
-
-### Verify Installation Status
+### 1. Clone & enter the repo
 
 ```bash
-# Check if PostgreSQL is running
-sudo systemctl status postgresql
-
-# If not running, start the service
-sudo systemctl start postgresql
-
-# Enable PostgreSQL to start on boot
-sudo systemctl enable postgresql
+git clone https://github.com/akhil27051999/Flask-REST-API.git
+cd Flask-REST-API
 ```
 
----
-
-## 2. Database Configuration
-
-### Access PostgreSQL Shell
+### 2. Create and activate a virtual environment
 
 ```bash
-sudo -u postgres psql
+python3 -m venv venv
+source venv/bin/activate
 ```
 
-### Create Database User
+> **Why a venv?** Python dependencies are global by default. A venv isolates them per project so version conflicts (e.g., Flask 2 vs Flask 3) don't affect other apps.
 
-Use the psql shell or run these SQL commands:
-
-```sql
--- Create a new user with password
-CREATE USER student_user WITH PASSWORD 'student123';
-
--- Alternative: Use existing postgres user with new password
-ALTER USER postgres WITH PASSWORD 'postgres123';
-```
-
-> Security note: Replace the example passwords with strong secrets before using in any non-test environment.
-
-### Create Application Database
-
-```sql
--- Create database for the application
-CREATE DATABASE studentdb;
-
--- Grant privileges to the user
-GRANT ALL PRIVILEGES ON DATABASE studentdb TO student_user;
-
--- Make the user the owner of the database (optional)
-ALTER DATABASE studentdb OWNER TO student_user;
-```
-
----
-
-## 3. Verification Commands
+### 3. Install dependencies
 
 ```bash
-# List all users
-sudo -u postgres psql -c "\du"
-
-# List all databases
-sudo -u postgres psql -c "\l"
-
-# Test connection with created user (prompts for password)
-psql -U student_user -d studentdb -h localhost -W
-
-# Or connect directly as postgres user
-sudo -u postgres psql -d studentdb
+pip install --upgrade pip
+pip install -r app/requirements.txt
 ```
 
-Useful psql commands:
-
-```sql
--- Connect to specific database
-\c studentdb
-
--- List all tables
-\dt
-
--- Describe table structure
-\d students
-
--- View table data
-SELECT * FROM students;
-
--- Exit PostgreSQL shell
-\q
-```
-
----
-
-## 4. Flask Application Configuration
-
-### Install PostgreSQL Driver
-
-Ensure your virtual environment is active, then install:
+### 4. Create the database
 
 ```bash
-# Make sure virtual environment is activated
-source .venv/bin/activate
-
-# Install PostgreSQL adapter
-pip install psycopg2-binary
+psql postgres -c "CREATE DATABASE studentdb;"
+psql postgres -c "CREATE USER postgres WITH PASSWORD 'postgres123';" 2>/dev/null || true
+psql postgres -c "GRANT ALL PRIVILEGES ON DATABASE studentdb TO postgres;"
 ```
 
-### Environment Variables (.env)
+### 5. Configure environment variables
 
-Create a `.env` file in your project root (replace credentials as appropriate):
+Create a `.env` file at the project root:
 
 ```bash
-# Flask environment variables
+# Flask
 FLASK_ENV=development
 FLASK_APP=app/wsgi.py
 FLASK_DEBUG=1
 PYTHONUNBUFFERED=1
-DEBUG=True
 
-# PostgreSQL configuration
+# Postgres
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres123
 POSTGRES_DB=studentdb
-POSTGRES_HOST=postgres
+POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
-
-DATABASE_URL=postgresql://postgres:postgres123@postgres:5432/studentdb
+DATABASE_URL=postgresql://postgres:postgres123@localhost:5432/studentdb
 ```
 
-> Note: For production, avoid committing `.env` to source control. Use secrets management or environment variables provided by your hosting environment.
+> **Why a `.env` file?** Externalizes config from code (12-factor app). Same code runs in dev/staging/prod — only env vars change.
 
-### Flask Configuration (config.py example)
-
-```python
-import os
-from dotenv import load_dotenv
-# This file is used to configure the application settings
-# Load environment variables from a .env file
-load_dotenv()
-
-class Config:
-    DEBUG = os.getenv('DEBUG', 'False') == 'True'
-
-    # postgresql settings
-    POSTGRES_USER = os.getenv('POSTGRES_USER', 'user')
-    POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD', 'password')
-    POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'postgres')
-    POSTGRES_DB = os.getenv('POSTGRES_DB', 'dbname')
-    POSTGRES_PORT = os.getenv('POSTGRES_PORT', '5432')
-
-    SQLALCHEMY_DATABASE_URI = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
-    SQLALCHEMY_TRACK_MODIFICATIONS = False  # always good to disable
-   
-```
-
----
-
-## 5. Troubleshooting Common Issues
-
-### Connection Issues
+### 6. Run migrations (create tables)
 
 ```bash
-# Check if PostgreSQL is listening on correct port
-sudo netstat -tulpn | grep 5432
-
-# Check PostgreSQL logs
-sudo tail -f /var/log/postgresql/postgresql-*.log
-```
-
-### Permission Issues
-
-If you face permission problems, run in psql as a superuser:
-
-```sql
-GRANT ALL ON SCHEMA public TO student_user;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO student_user;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO student_user;
-```
-
-### Reset PostgreSQL Password
-
-```sql
--- If you forget the postgres user password:
-ALTER USER postgres WITH PASSWORD 'new_password';
-```
-
----
-
-## 6. Quick Setup Script
-
-Create a script named `setup_db.sh` to automate user and database creation.
-
-Contents of `setup_db.sh`:
-
-```bash
-#!/bin/bash
-
-# Database setup script
-echo "Setting up PostgreSQL database for Flask application..."
-
-# Create user and database
-sudo -u postgres psql -c "CREATE USER student_user WITH PASSWORD 'student123';"
-sudo -u postgres psql -c "CREATE DATABASE studentdb;"
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE studentdb TO student_user;"
-
-echo "Database setup completed!"
-echo "Connection string: postgresql://student_user:student123@localhost:5432/studentdb"
-```
-
-Make it executable and run:
-
-```bash
-chmod +x setup_db.sh
-./setup_db.sh
-```
-
-> Reminder: Change default passwords before using in real environments.
-
----
-
-## 7. Security Recommendations
-
-For production, reduce privileges and follow the principle of least privilege:
-
-```sql
--- Restrict elevated capabilities for the application user
-ALTER USER student_user NOSUPERUSER NOCREATEDB NOCREATEROLE;
-
--- Create a read-only user for specific operations
-CREATE USER read_only_user WITH PASSWORD 'readonly123';
-GRANT CONNECT ON DATABASE studentdb TO read_only_user;
-GRANT USAGE ON SCHEMA public TO read_only_user;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO read_only_user;
-```
-
-Additional recommendations:
-- Use strong, unique passwords or managed secrets (e.g., Vault, AWS Secrets Manager).
-- Use SSL/TLS for remote DB connections.
-- Restrict network access to the PostgreSQL port.
-- Regularly back up your database and test restores.
-
-# Flask App with PostgreSQL Integration Guide
-
-Project Structure (suggested)
-```
-Flask-REST-API/
-├── .venv/                    # Virtual environment
-├── app/                      # Application package
-│   ├── __init__.py           # App factory
-│   ├── config.py             # Configuration settings
-│   └── models.py             # Database models
-├── migrations/               # Database migrations (auto-generated)
-├── .env                      # Environment variables
-├── requirements.txt          # Python dependencies
-└── README-FLASK-POSTGRESQL.md
-```
-
-### 1. Environment Configuration
-
-Create a `.env` file in the project root to store environment-specific and sensitive values. Example:
-
-```bash
-# Flask environment variables
-FLASK_ENV=development
-FLASK_APP=app/wsgi.py
-FLASK_DEBUG=1
-PYTHONUNBUFFERED=1
-DEBUG=True
-
-# PostgreSQL configuration
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres123
-POSTGRES_DB=studentdb
-POSTGRES_HOST=postgres
-POSTGRES_PORT=5432
-
-DATABASE_URL=postgresql://postgres:postgres123@postgres:5432/studentdb
-```
-
-Configuration class (app/config.py)
-
-```python
-import os
-from dotenv import load_dotenv
-# This file is used to configure the application settings
-# Load environment variables from a .env file
-load_dotenv()
-
-class Config:
-    DEBUG = os.getenv('DEBUG', 'False') == 'True'
-
-    # postgresql settings
-    POSTGRES_USER = os.getenv('POSTGRES_USER', 'user')
-    POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD', 'password')
-    POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'postgres')
-    POSTGRES_DB = os.getenv('POSTGRES_DB', 'dbname')
-    POSTGRES_PORT = os.getenv('POSTGRES_PORT', '5432')
-
-    SQLALCHEMY_DATABASE_URI = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
-    SQLALCHEMY_TRACK_MODIFICATIONS = False  # always good to disable
-
-```
-
-Notes:
-- Use DATABASE_URL when deploying to services that provide a single connection string.
-- Do not commit `.env` to source control. Use a secret manager for production.
-
-### 2. Application Setup
-
-App factory pattern provides flexibility for testing and multiple configurations.
-
-app/__init__.py (application factory, extensions initialization)
-
-```python
-from flask import Flask, jsonify
-from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
-from .logger import setup_logger
-
-db = SQLAlchemy()
-migrate = Migrate()
-
-def create_app(config_class=None):
-    app = Flask(__name__)
-
-    # Configure the app
-    if config_class:
-        app.config.from_object(config_class)
-    else:
-        app.config.from_object('app.config.Config')
-
-
-    # Initialize logger
-    logger = setup_logger('student_logger', log_file='app.log')
-    app.logger.info("Student Management API started successfully.")
-
-    # Initialize database and migration
-    db.init_app(app)
-    migrate.init_app(app, db)
-
-    # Import models inside app context
-    with app.app_context():
-        from . import models
-
-    # Import and register blueprints here (after db/models are ready)
-    from .routes import student_bp
-    app.register_blueprint(student_bp, url_prefix='/students')
-
-    # Home route
-    @app.route('/')
-    def home():
-        app.logger.info("Home page accessed")
-        return "Welcome to the Student Management API!"
-
-    # Health check route
-    @app.route('/health')
-    def health():
-        app.logger.info("Health check accessed")
-        return jsonify({"status": "ok"}), 200
-
-    return app
-```
-
-### 3. Database Models
-
-app/models.py — example Student model:
-
-```python
-from . import db   # Import db from the app package
-
-class Student(db.Model):
-    __tablename__ = "students"
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50), nullable=False)
-    domain = db.Column(db.String(50), nullable=False)
-    gpa = db.Column(db.Float, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-
-```
-
-### 4. Database Migrations
-
-Initial setup and common commands (requires Flask-Migrate installed and FLASK_APP set).
-
-Set FLASK_APP and initialize migrations:
-
-```bash
-# Set the flask app entrypoint (Mac/Linux)
-export FLASK_APP=app:create_app
-
-# On Windows (PowerShell)
-# $env:FLASK_APP = "app:create_app"
-
-# Initialize migrations (run once)
-flask db init
-
-# Generate migration after creating models
-flask db migrate -m "Initial migration - create students table"
-
-# Apply migrations to the DB
 flask db upgrade
 ```
 
-Migration folder structure after `flask db init`:
+> **What's a migration?** A versioned SQL change script. `db upgrade` runs all pending migrations to bring the DB schema up to date. Reproducible across environments.
 
-```
-migrations/
-├── versions/           # Individual migration scripts
-├── env.py              # Alembic environment configuration
-└── script.py.mako      # Migration script template
-```
-
-Common migration commands:
-- `flask db init` — initialize migrations directory (once)
-- `flask db migrate -m "message"` — generate migration after model changes
-- `flask db upgrade` — apply migrations
-- `flask db downgrade` — rollback last migration
-- `flask db current` — show current migration revision
-- `flask db history` — show migration history
-
-### 5. Database Operations
-
-Using Flask shell for quick DB operations. Start shell (ensures app context is loaded):
+### 7. Seed sample data
 
 ```bash
-flask shell
+python app/seed.py
 ```
 
-Example operations inside the shell:
+Inserts 100 student records with random domains and GPAs.
 
-```python
-from app import db
-from app.models import Student
-
-# Create a new student
-new_student = Student(
-    name='Akhil Thydai',
-    domain='Electronics and Communication Engineering',
-    gpa=7.01,
-    email='160101130028@cutm.ac.in'
-)
-db.session.add(new_student)
-db.session.commit()
-
-# Query all students
-students = Student.query.all()
-
-# Get by ID
-student = Student.query.get(1)
-
-# Filter by email
-student_by_email = Student.query.filter_by(email='160101130028@cutm.ac.in').first()
-
-# Update
-student = Student.query.get(1)
-student.gpa = 7.5
-db.session.commit()
-
-# Delete
-db.session.delete(student)
-db.session.commit()
-```
-
-PostgreSQL verification commands (shell):
+### 8. Run the app
 
 ```bash
-# Connect to PostgreSQL
-psql -h localhost -U postgres -d studentdb
-
-# Inside psql:
-\dt
-\d students
-SELECT * FROM students;
+flask run
 ```
 
-### 6. Schema Evolution Example
+Server starts at `http://127.0.0.1:5000`.
 
-Adding a new nullable column (phone):
-
-1) Update model (app/models.py):
-
-```python
-phone = db.Column(db.String(15), nullable=True)  # New optional field
-```
-
-2) Generate and apply migration:
+### 9. Verify
 
 ```bash
-flask db migrate -m "Add phone number field to Student"
-flask db upgrade
+curl http://127.0.0.1:5000/students/3
+# → {"id":3,"name":"Student 3","domain":"...","email":"...","gpa":...}
 ```
 
-Handling new non-nullable required fields for existing data:
-- Option A: Add column as nullable, backfill data, then alter to non-nullable in a later migration.
-- Option B: Add column with a server_default in migration so existing rows have a value; then remove the default if desired.
-
-Example migration snippet to add non-nullable with default:
-
-```python
-def upgrade():
-    op.add_column('students',
-        sa.Column('phone', sa.String(length=15), nullable=False, server_default='000-000-0000')
-    )
-    # Optionally remove server_default afterward
-    op.alter_column('students', 'phone', server_default=None)
-```
-
-### 7. Complete Workflow Example
-
-- Edit app/models.py to change or add fields.
-- Generate migration: `flask db migrate -m "Describe changes"`.
-- Review `migrations/versions/<revision>.py`.
-- Apply: `flask db upgrade`.
-- Verify table/data in PostgreSQL: `psql -h localhost -U postgres -d studentdb -c "SELECT * FROM students;"`.
-
-### 8. Troubleshooting common issues:
-- Migration conflicts: If migrations diverge, consider merging revisions or — only in development — resetting migrations:
-  ```bash
-  rm -rf migrations/
-  flask db init
-  flask db migrate -m "Initial"
-  flask db upgrade
-  ```
-  Do NOT do this on production databases without careful planning and backups.
-- Database connection errors: verify PostgreSQL is running and .env credentials are correct.
-- Import-time errors: ensure `create_app` registers or imports modules only after extensions are initialized.
-
-### 9. Best Practices
-- Always use migrations (Alembic via Flask-Migrate) for schema changes; do not manually alter production DB schema.
-- Keep migration scripts in version control.
-- Use meaningful migration messages.
-- Test migrations on a development/staging DB before production.
-- Use environment variables or a secret manager for DB credentials and secrets in production.
-- Backup databases prior to major schema changes.
-- Limit DB user privileges in production (principle of least privilege).
-- Log SQL only when needed (SQLALCHEMY_ECHO).
-
-# Flask REST API — Student CRUD Operations
-
-## API Overview
-
-### Base URL (development)
-```
-http://localhost:5000/api/students
-```
-
-### Project Structure (recommended)
-```text
-Flask-REST-API/
-├── app/
-│   ├── __init__.py          # App factory
-│   ├── config.py            # Configuration
-│   ├── models.py            # Database models
-│   ├── loggers.py           # logger configuration
-│   └── routes.py            # API routes
-├── migrations/              # DB migrations
-├── .env                     # Environment variables
-└── requirements.txt
-```
-
-## Loggers Setup 
-```python
-import logging
-import os
-
-def setup_logger(name, log_file='app.log', level=logging.DEBUG):
-    
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-
-    # Avoid adding multiple handlers if logger already exists
-    if not logger.hasHandlers():
-        # Console handler
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(level)
-        console_formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-        console_handler.setFormatter(console_formatter) 
-        logger.addHandler(console_handler) 
-
-        # File handler
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setLevel(level)
-        file_formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-        file_handler.setFormatter(file_formatter)
-        logger.addHandler(file_handler)
-
-    return logger
-```
-
-## Blueprint Setup
-
-### Create routes package
-```bash
-mkdir -p app/routes
-touch app/routes/__init__.py
-touch app/routes/student_routes.py
-```
-
-Register blueprint in your app factory (see implementation snippet below). The blueprint is defined with:
-- name: `student`
-- url_prefix: `/api/students`
+---
 
 ## API Endpoints
 
-#### Create Student — POST /api/students
-- Description: Add a new student.
-- Request body (JSON):
-```json
-{
-  "name": "John Doe",
-  "domain": "Computer Science",
-  "gpa": 3.8,
-  "email": "john.doe@university.edu"
-}
-```
-- Success response:
-  - 201 Created
-```json
-{
-  "message": "Student added successfully!",
-  "student_id": 1
-}
-```
-- Errors:
-  - 400 Missing/invalid fields
-  - 409 Email conflict
-  - 500 Database error
-
-#### Get All Students — GET /api/students
-- Description: Retrieve all students.
-- Success response (200 OK):
-```json
-{
-  "count": 2,
-  "students": [
-    { "id": 1, "name": "John Doe", "domain": "Computer Science", "gpa": 3.8, "email": "john.doe@university.edu" },
-    { "id": 2, "name": "Jane Smith", "domain": "EE", "gpa": 3.9, "email": "jane@university.edu" }
-  ]
-}
-```
-
-#### Get Student by ID — GET /api/students/<id>
-- Description: Retrieve a single student by ID.
-- Success response (200 OK):
-```json
-{
-  "id": 1,
-  "name": "John Doe",
-  "domain": "Computer Science",
-  "gpa": 3.8,
-  "email": "john.doe@university.edu"
-}
-```
-- Errors:
-  - 404 Not Found (if student does not exist)
-
-#### Update Student — PUT /api/students/<id>
-- Description: Partial updates are accepted; only provided fields are updated.
-- Request body example:
-```json
-{ "name": "John Updated", "gpa": 3.9 }
-```
-- Success response:
-  - 200 OK
-```json
-{ "message": "Student updated successfully!" }
-```
-- Errors:
-  - 400 No data / invalid format
-  - 404 Not Found
-  - 409 Email conflict
-  - 500 Database error
-
-#### Delete Student — DELETE /api/students/<id>
-- Description: Permanently deletes the student record.
-- Success response:
-  - 200 OK
-```json
-{
-  "message": "Student deleted successfully!",
-  "deleted_student": { "id": 1, "name": "John Doe" }
-}
-```
-- Errors:
-  - 404 Not Found
-  - 500 Database error
-
-### Error Handling
-
-Standard example response formats:
-
-- 400 Bad Request
-```json
-{
-  "error": "Missing required fields",
-  "required_fields": ["name", "domain", "gpa", "email"]
-}
-```
-
-- 404 Not Found
-```json
-{ "error": "Student not found" }
-```
-
-- 409 Conflict
-```json
-{ "error": "Email already exists" }
-```
-
-- 500 Internal Server Error
-```json
-{ "error": "Database error" }
-```
-
-## Complete Implementation Snippets
-
-### App Factory (app/__init__.py)
-```python
-from flask import Flask, jsonify
-from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
-from .logger import setup_logger
-
-db = SQLAlchemy()
-migrate = Migrate()
-
-def create_app(config_class=None):
-    app = Flask(__name__)
-
-    # Configure the app
-    if config_class:
-        app.config.from_object(config_class)
-    else:
-        app.config.from_object('app.config.Config')
-
-
-    # Initialize logger
-    logger = setup_logger('student_logger', log_file='app.log')
-    app.logger.info("Student Management API started successfully.")
-
-    # Initialize database and migration
-    db.init_app(app)
-    migrate.init_app(app, db)
-
-    # Import models inside app context
-    with app.app_context():
-        from . import models
-
-    # Import and register blueprints here (after db/models are ready)
-    from .routes import student_bp
-    app.register_blueprint(student_bp, url_prefix='/students')
-
-    # Home route
-    @app.route('/')
-    def home():
-        app.logger.info("Home page accessed")
-        return "Welcome to the Student Management API!"
-
-    # Health check route
-    @app.route('/health')
-    def health():
-        app.logger.info("Health check accessed")
-        return jsonify({"status": "ok"}), 200
-
-    return app
-```
-
-## Testing the API
-
-### Using curl
-```bash
-# Create
-curl -X POST http://localhost:5000/api/students \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Alice Johnson","domain":"Mathematics","gpa":3.7,"email":"alice@university.edu"}'
-
-# Get all
-curl http://localhost:5000/api/students
-
-# Get one
-curl http://localhost:5000/api/students/1
-
-# Update
-curl -X PUT http://localhost:5000/api/students/1 \
-  -H "Content-Type: application/json" \
-  -d '{"gpa":3.9}'
-
-# Delete
-curl -X DELETE http://localhost:5000/api/students/1
-```
-
-### Using Python requests
-```python
-import requests
-BASE = "http://localhost:5000/api/students"
-
-# Create
-r = requests.post(BASE, json={
-    "name": "Bob Wilson",
-    "domain": "Physics",
-    "gpa": 3.6,
-    "email": "bob@university.edu"
-})
-print(r.status_code, r.json())
-
-# List
-r = requests.get(BASE)
-print(r.status_code, r.json())
-```
-
-### Verification & Notes
-- Ensure environment variables (DATABASE_URL or individual DB_* vars) are set and Flask app is configured with `FLASK_APP=app:create_app`.
-- Run migrations with Flask-Migrate: `flask db init` (once), `flask db migrate -m "msg"`, `flask db upgrade`.
-- Do not expose `.env` or secrets in VCS.
-- Validate inputs further for production (email format, GPA ranges, rate-limiting, auth).
-
-# Flask Student API — Postman Testing Documentation
-
-> This README provides a complete Postman testing guide for the Student CRUD REST API built with Flask and PostgreSQL.
-
-**Base URL (development)**
-
-`http://localhost:5000/api/students`
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/` | Welcome message |
+| GET | `/health` | Liveness check (used by K8s probes) |
+| GET | `/students` | List all students |
+| GET | `/students/<id>` | Get one student |
+| POST | `/students` | Create a student |
+| PUT | `/students/<id>` | Update a student |
+| DELETE | `/students/<id>` | Delete a student |
+| GET | `/metrics` | Prometheus metrics (added later) |
 
 ---
 
-## API Overview
+## Commands Reference
 
-This API exposes CRUD operations for student records.
-
-- Base URL (example): `http://localhost:5000/api/students`
-
----
-
-## Postman Collection (Import JSON)
-
-To import into Postman use the following JSON structure (save as `Student Management API.postman_collection.json` or paste into Postman's Import → Raw Text):
-
-```json
-{
-  "info": {
-    "name": "Student Management API",
-    "description": "Complete CRUD operations for Student records",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-  },
-  "item": [
-    {
-      "name": "Health Check",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": "http://localhost:5000/api/students/health"
-      }
-    },
-    {
-      "name": "Create Student",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n    \"name\": \"John Doe\",\n    \"domain\": \"Computer Science\",\n    \"gpa\": 3.8,\n    \"email\": \"john.doe@university.edu\"\n}"
-        },
-        "url": "http://localhost:5000/api/students"
-      }
-    },
-    {
-      "name": "Get All Students",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": "http://localhost:5000/api/students"
-      }
-    },
-    {
-      "name": "Get Student by ID",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": "http://localhost:5000/api/students/1"
-      }
-    },
-    {
-      "name": "Update Student",
-      "request": {
-        "method": "PUT",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n    \"name\": \"John Updated\",\n    \"gpa\": 3.9\n}"
-        },
-        "url": "http://localhost:5000/api/students/1"
-      }
-    },
-    {
-      "name": "Delete Student",
-      "request": {
-        "method": "DELETE",
-        "header": [],
-        "url": "http://localhost:5000/api/students/1"
-      }
-    }
-  ]
-}
-```
+| Sl. No | Description | Command | Why |
+|--------|-------------|---------|-----|
+| 1 | Activate venv | `source venv/bin/activate` | Isolates Python dependencies |
+| 2 | Install dependencies | `pip install -r app/requirements.txt` | Locks exact versions across environments |
+| 3 | Create migration | `flask db migrate -m "msg"` | Generates a new migration script from model changes |
+| 4 | Apply migrations | `flask db upgrade` | Brings DB schema to latest version |
+| 5 | Roll back migration | `flask db downgrade` | Reverts the last migration (use with care) |
+| 6 | Seed DB | `python app/seed.py` | Loads sample data for dev |
+| 7 | Run dev server | `flask run` | Built-in dev server (auto-reload) |
+| 8 | Run prod server | `gunicorn --bind 0.0.0.0:5000 --workers=2 app.wsgi:app` | Production WSGI server |
+| 9 | Run tests | `pytest -v tests/unit` | Unit tests only |
+| 10 | Deactivate venv | `deactivate` | Exits the virtual environment |
 
 ---
 
-## Postman Environment Setup
+## Troubleshooting
 
-Create a new environment (Postman → Environments → Create) named **Student API Local** and add these variables:
-
-| Variable   | Initial Value                | Current Value                |
-|------------|------------------------------|------------------------------|
-| base_url   | http://localhost:5000        | http://localhost:5000        |
-| student_id | 1                            | 1                            |
-
-Use `{{base_url}}` and `{{student_id}}` in request URLs for portability.
-
----
-
-## API Endpoints & Testing Guide
-
-### 1. Health Check
-- Method: GET  
-- URL: `{{base_url}}/api/students/health`  
-- Headers: None  
-- Expected response (200 OK):
-```json
-{
-  "status": "healthy",
-  "message": "Student API is running",
-  "timestamp": "2024-01-15T10:30:00Z"
-}
-```
+| Sl. No | Issue | Cause | Fix |
+|--------|-------|-------|-----|
+| 1 | `zsh: command not found: flask` after `source venv/bin/activate` | Project moved to a new path; venv binary shebangs point to the old absolute path | Recreate the venv: `rm -rf venv && python3 -m venv venv && pip install -r app/requirements.txt` |
+| 2 | `psycopg2.OperationalError: connection refused` | Postgres not running, or wrong host/port | `brew services start postgresql@15`; verify `POSTGRES_HOST=localhost` in `.env` |
+| 3 | `relation "student" does not exist` | Migrations not applied | `flask db upgrade` |
+| 4 | `Address already in use: 5000` on macOS | macOS AirPlay Receiver uses port 5000 | Disable AirPlay Receiver in System Settings, or run on a different port: `flask run -p 5001` |
+| 5 | `ModuleNotFoundError: No module named 'app'` | Running script from wrong directory or PYTHONPATH not set | Run from project root with `PYTHONPATH=.` or use module form: `python -m app.seed` |
+| 6 | `Error: Path doesn't exist: migrations` | Working directory mismatch | Run from project root, or specify explicitly: `flask db upgrade --directory app/migrations` |
+| 7 | App responds but DB queries fail | Stale `.env` not reloaded | Restart `flask run` after editing `.env` |
+| 8 | `pip install` fails on `psycopg2-binary` | Missing PostgreSQL dev headers | `brew install postgresql@15` first |
 
 ---
 
-### 2. Create Student — POST `/api/students`
-- Method: POST  
-- URL: `{{base_url}}/api/students`  
-- Headers: `Content-Type: application/json`  
-- Body (JSON):
-```json
-{
-  "name": "Alice Johnson",
-  "domain": "Computer Science",
-  "gpa": 3.8,
-  "email": "alice.johnson@university.edu"
-}
-```
-- Success (201 Created):
-```json
-{
-  "message": "Student added successfully!",
-  "student_id": 1
-}
-```
-- Error responses:
-  - 400 Bad Request: missing fields / invalid GPA
-  - 409 Conflict: email already exists
-  - 500 Internal Server Error: DB error
+## Interview Q&A
+
+| Q | A |
+|---|---|
+| **Why use a virtual environment?** | Isolates project-specific Python dependencies. Without it, installing Flask 3 globally could break another project requiring Flask 2. Industry standard since `venv` shipped with Python 3.3. |
+| **What's the difference between `flask run` and `gunicorn`?** | `flask run` is a single-threaded **dev server** with auto-reload. `gunicorn` is a **production WSGI server** — multi-process, multi-worker, handles concurrent requests properly. Never use `flask run` in production. |
+| **What is WSGI?** | Web Server Gateway Interface — the spec for how Python web apps talk to web servers. Flask is a WSGI app; Gunicorn is a WSGI server. ASGI is the async equivalent (used by FastAPI). |
+| **How do migrations work?** | Alembic compares your SQLAlchemy models to the DB schema and generates Python scripts to bring them in sync. Each script has `upgrade()` and `downgrade()` functions. The `alembic_version` table tracks which migrations have been applied. |
+| **Why externalize config to `.env`?** | 12-factor app principle. Same code runs in dev/staging/prod — only env vars change. Secrets (passwords, API keys) never get committed. |
+| **How would you handle DB connection pooling?** | SQLAlchemy has built-in pooling (`QueuePool` by default). Configure via `SQLALCHEMY_ENGINE_OPTIONS = {'pool_size': 10, 'max_overflow': 20}`. For high-scale, use PgBouncer in front. |
+| **What's `python-dotenv` doing?** | Loads `.env` file values into `os.environ` at app startup. Without it, you'd `export` each var manually before running. |
+| **How do you secure secrets in `.env`?** | Never commit `.env` (add to `.gitignore`). For prod, use Vault / AWS Secrets Manager / SSM Parameter Store and inject via env vars at runtime. |
+| **What does `app/wsgi.py` do?** | Entry point for Gunicorn — exports a callable `app` object. Gunicorn imports it and serves it. Decoupling lets you swap servers (gunicorn, uwsgi, mod_wsgi) without changing app code. |
+| **Why pin exact dependency versions in requirements.txt?** | Reproducibility. `Flask>=3.0` could pull 3.0.1 today and 3.5.0 next month with breaking changes. `Flask==3.1.1` guarantees the same behavior everywhere. Use `pip-tools` or `poetry` for lock files in larger projects. |
+| **How do you debug a Python app in production?** | Structured logging (JSON), correlation IDs, distributed tracing (OpenTelemetry), error tracking (Sentry). Never `print()` — use `logger.info()`. |
+| **What's the difference between SQLAlchemy Core and ORM?** | Core = SQL expression language (close to raw SQL). ORM = object-relational mapper (Python classes ↔ tables). We use ORM for most work, Core for performance-critical or complex queries. |
 
 ---
 
-### 3. Get All Students — GET `/api/students`
-- Method: GET  
-- URL: `{{base_url}}/api/students`  
-- Success (200 OK) example:
-```json
-{
-  "count": 2,
-  "students": [
-    {
-      "id": 1,
-      "name": "Alice Johnson",
-      "domain": "Computer Science",
-      "gpa": 3.8,
-      "email": "alice.johnson@university.edu"
-    },
-    {
-      "id": 2,
-      "name": "Bob Smith",
-      "domain": "Electrical Engineering",
-      "gpa": 3.9,
-      "email": "bob.smith@university.edu"
-    }
-  ]
-}
-```
-- Empty DB:
-```json
-{
-  "count": 0,
-  "students": []
-}
-```
+## STAR Stories
+
+### Story 1: "Tell me about a time you had to debug a hard environment issue."
+
+**Situation:** After moving the Flask project from `~/Desktop` to `~/Documents`, the venv stopped working — `source venv/bin/activate` ran successfully but `flask` command was not found.
+
+**Task:** Get the dev environment back online without disrupting other team members' setups.
+
+**Action:**
+1. Confirmed `flask` binary existed in `venv/bin/` (so packages were installed).
+2. Inspected `venv/bin/flask` shebang — it pointed to the old absolute path: `#!/Users/x/Desktop/Flask-REST-API/venv/bin/python3`.
+3. Realized Python's venv writes hardcoded absolute paths into the shebangs of installed CLI tools.
+4. Solution: deleted and recreated the venv, then re-installed dependencies.
+5. Documented this in the README so the next team member doesn't hit it.
+
+**Result:** Dev environment back up in 5 minutes. Added a note in setup docs: "Don't move the project folder; if you do, recreate the venv."
+
+**Takeaway:** Python venvs are not portable across paths. For portability, use Docker (which we did in Module 2) or `pyenv-virtualenv` with relative paths.
 
 ---
 
-### 4. Get Student by ID — GET `/api/students/{{student_id}}`
-- Method: GET  
-- URL: `{{base_url}}/api/students/{{student_id}}`  
-- Success (200 OK):
-```json
-{
-  "id": 1,
-  "name": "Alice Johnson",
-  "domain": "Computer Science",
-  "gpa": 3.8,
-  "email": "alice.johnson@university.edu"
-}
-```
-- 404 Not Found:
-```json
-{ "error": "Student not found" }
-```
+### Story 2: "Tell me about a time you couldn't connect to a port."
+
+**Situation:** Couldn't bind Flask to port 5000 on a fresh macOS install.
+
+**Task:** Identify the port conflict and resolve it.
+
+**Action:**
+1. Ran `lsof -i :5000` — found `ControlCenter` (macOS AirPlay Receiver) holding the port.
+2. Two options: disable AirPlay Receiver in System Settings, or use a different port.
+3. Chose port `5001` for the dev workflow (less disruption); for the Docker/K8s setup later, used port-mapping `-p 8080:5000` to bypass the host conflict.
+
+**Result:** Documented "macOS AirPlay = port 5000 conflict" in our team wiki.
+
+**Takeaway:** OS-level processes can occupy "open" ports. Always check with `lsof -i :<port>` when binding fails.
 
 ---
 
-### 5. Update Student — PUT `/api/students/{{student_id}}`
-- Method: PUT  
-- URL: `{{base_url}}/api/students/{{student_id}}`  
-- Headers: `Content-Type: application/json`  
-- Body (partial update allowed):
-```json
-{
-  "name": "Alice Johnson-Updated",
-  "gpa": 3.9
-}
-```
-- Success (200 OK):
-```json
-{ "message": "Student updated successfully!" }
-```
-- Errors:
-  - 400 No data / invalid fields
-  - 404 Not Found
-  - 409 Email conflict
+## Production Hardening
+
+| Area | Local | Production |
+|------|-------|-----------|
+| **WSGI server** | `flask run` (single-threaded) | Gunicorn with `--workers=(2*CPU+1)`, `--worker-class=gevent` for I/O-bound workloads |
+| **Database** | Local Postgres | Managed RDS / Cloud SQL with Multi-AZ, automated backups, read replicas |
+| **DB pooling** | Default SQLAlchemy pool | PgBouncer in front of Postgres for connection multiplexing |
+| **Secrets** | `.env` file | Vault / AWS Secrets Manager / Kubernetes Secrets, injected at runtime |
+| **Migrations** | Manual `flask db upgrade` | Init container or pre-deploy hook in CD pipeline |
+| **Logging** | stdout, plaintext | JSON-structured, shipped to Loki/CloudWatch/Splunk |
+| **Error tracking** | Stack traces in console | Sentry / Rollbar with alerts |
+| **Health checks** | `/health` returns 200 | `/health/live` (liveness) + `/health/ready` (DB connectivity check) |
+| **Metrics** | None | `/metrics` Prometheus endpoint (added in Module 7) |
+| **Config validation** | Crashes on bad config at first request | Validate config on startup, fail fast |
+| **TLS** | HTTP | Terminate TLS at ingress / ALB; HSTS headers |
 
 ---
 
-### 6. Delete Student — DELETE `/api/students/{{student_id}}`
-- Method: DELETE  
-- URL: `{{base_url}}/api/students/{{student_id}}`  
-- Success (200 OK):
-```json
-{
-  "message": "Student deleted successfully!",
-  "deleted_student": {
-    "id": 1,
-    "name": "Alice Johnson-Updated"
-  }
-}
-```
-- 404 Not Found:
-```json
-{ "error": "Student not found" }
-```
+## Cloud Mapping
+
+| Local Component | AWS Equivalent | Why |
+|-----------------|---------------|-----|
+| Local Python | Lambda (event-driven), ECS/EKS (container), Elastic Beanstalk (managed) | Runtime managed for you |
+| Local Postgres | RDS PostgreSQL | Managed backups, Multi-AZ failover, automatic patching |
+| `.env` file | SSM Parameter Store (config) + Secrets Manager (passwords) | Secure, versioned, IAM-controlled |
+| Gunicorn behind nginx | ALB → ECS/EKS pods running Gunicorn | ALB handles TLS, routing, health checks |
+| File logs | CloudWatch Logs | Centralized, searchable, alerting |
 
 ---
 
-## Complete Testing Workflow
+## Reference Links (Internal)
 
-### Full CRUD Cycle (recommended)
-1. Create a student (POST) → note returned `student_id`.  
-2. Get all students (GET) → verify creation appears.  
-3. Get specific student (GET `/{student_id}`) → verify fields.  
-4. Update student (PUT `/{student_id}`) → verify success.  
-5. Delete student (DELETE `/{student_id}`) → verify success.  
-6. Verify deletion (GET `/{student_id}`) → should return 404.
-
----
-
-## Error Scenario Testing
-
-- Create with missing fields:
-```json
-{ "name": "Incomplete Student", "domain": "Physics" }
-```
-Expect: 400 Bad Request.
-
-- Create with invalid GPA:
-```json
-{ "name": "Invalid GPA", "domain": "Chemistry", "gpa": "not_a_number", "email": "invalid@university.edu" }
-```
-Expect: 400 Bad Request.
-
-- Update non-existent student:
-PUT `/api/students/9999` with some body → Expect: 404 Not Found.
-
-- Duplicate email creation:
-Create same email twice → Expect: 409 Conflict.
-
----
-
-## Quick cURL Commands
-
-Create student:
-```bash
-curl -X POST http://localhost:5000/api/students \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Alice Johnson",
-    "domain": "Computer Science",
-    "gpa": 3.8,
-    "email": "alice.johnson@university.edu"
-  }'
-```
-
-Get all students:
-```bash
-curl http://localhost:5000/api/students
-```
-
-Get specific student:
-```bash
-curl http://localhost:5000/api/students/1
-```
-
-Update student:
-```bash
-curl -X PUT http://localhost:5000/api/students/1 \
-  -H "Content-Type: application/json" \
-  -d '{"gpa": 3.9, "name": "Alice Johnson-Updated"}'
-```
-
-Delete student:
-```bash
-curl -X DELETE http://localhost:5000/api/students/1
-```
-
----
-
-## Testing Notes & Best Practices
-
-Pre-requisites:
-- Flask app running on `localhost:5000`
-- PostgreSQL running and connected
-- Migrations applied (`flask db upgrade`)
-- Virtual environment activated
-
-Test data management:
-- Use unique emails per test.
-- Clean up test data after runs (or use disposable test DB).
-- Consider automated Postman tests and a CI job to run them against a staging environment.
-
-Postman tips:
-- Put requests into a Collection and group by resource.
-- Use Environment variables (e.g., `base_url`, `student_id`) to make requests portable.
-- Add Tests in Postman to assert response codes and JSON structure.
-- Use pre-request scripts to dynamically set `student_id` from response data.
-
-Common issues:
-- Connection refused — ensure Flask app is running and listening on port 5000.
-- DB errors — confirm Postgres is running, credentials and `DATABASE_URL` are correct.
-- 404 errors — check URL and `student_id`.
-- Validation errors — ensure Content-Type header and JSON payloads are correct.
-
-
+- App entry point: [app/__init__.py](../../app/__init__.py)
+- Models: [app/models.py](../../app/models.py)
+- Routes: [app/routes.py](../../app/routes.py)
+- Config: [app/config.py](../../app/config.py)
+- Seed script: [app/seed.py](../../app/seed.py)
+- Migrations: [app/migrations/](../../app/migrations/)
+- Tests: [tests/unit/](../../tests/unit/)
