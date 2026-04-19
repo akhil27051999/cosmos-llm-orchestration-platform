@@ -66,8 +66,8 @@ alertmanager:
   persistence:
     size: 1Gi
     storageClass: standard
-  # Fix permission errors on PVC
-  securityContext:
+  # Fix permission errors on PVC (pod-level for fsGroup)
+  podSecurityContext:
     runAsUser: 65534
     runAsNonRoot: true
     runAsGroup: 65534
