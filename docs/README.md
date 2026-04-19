@@ -15,7 +15,7 @@ Production-grade DevOps reference architecture built around a Flask + PostgreSQL
                                 └──────────┬───────────┘
                                            │
                                            ▼
-   ┌────────────────────── CI Pipeline (GitHub Actions) ──────────────────────┐
+   ┌────────────────────── CI Pipeline (GitHub Actions) ───────────────--───────┐
    │                                                                            │
    │  build job:                                                                │
    │   • Run unit tests (pytest)                                                │
@@ -23,22 +23,22 @@ Production-grade DevOps reference architecture built around a Flask + PostgreSQL
    │   • Push to DockerHub (tagged with commit SHA)                             │
    │                                                                            │
    │  update-helm job:                                                          │
-   │   • sed updates helm/application/values.yaml with new image tag           │
+   │   • sed updates helm/application/values.yaml with new image tag            │
    │   • Commits & pushes to main branch                                        │
    │                                                                            │
-   └────────────────────────────────────┬──────────────────────────────────────┘
+   └────────────────────────────────────┬────────────────────────────────-──────┘
                                         │ git push main
                                         ▼
-   ┌─────────────────── ArgoCD (GitOps Controller in K8s) ────────────────────┐
+   ┌─────────────────── ArgoCD (GitOps Controller in K8s) ────────────────--────┐
    │                                                                            │
-   │  Detects values.yaml diff → renders Helm chart → applies new manifests    │
+   │  Detects values.yaml diff → renders Helm chart → applies new manifests     │
    │  → Kubernetes does rolling update                                          │
    │                                                                            │
-   └────────────────────────────────────┬──────────────────────────────────────┘
+   └────────────────────────────────────┬───────────────────────────────-───────┘
                                         │
                                         ▼
    ┌──────────────────── 3-Node Minikube Cluster (Production-like) ───────────┐
-   │                                                                            │
+   │                                                                          │
    │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────────────────┐  │
    │  │ App Tier        │  │ Database Tier   │  │ Dependent Services Tier  │  │
    │  │ (minikube)      │  │ (minikube-m02)  │  │ (minikube-m03)           │  │
@@ -52,8 +52,8 @@ Production-grade DevOps reference architecture built around a Flask + PostgreSQL
    │  │                 │  │                 │  │ • Postgres exporter      │  │
    │  │                 │  │                 │  │ • Blackbox exporter      │  │
    │  └─────────────────┘  └─────────────────┘  └──────────────────────────┘  │
-   │                                                                            │
-   └────────────────────────────────────┬──────────────────────────────────────┘
+   │                                                                          │
+   └────────────────────────────────────┬─────────────────────────────────────┘
                                         │ Slack alerts
                                         ▼
                               ┌───────────────────┐
