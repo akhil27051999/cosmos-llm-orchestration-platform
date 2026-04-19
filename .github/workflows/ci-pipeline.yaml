@@ -57,7 +57,16 @@ jobs:
       - name: Push Docker Image to Docker Hub
         run: |
           docker tag flask-app:$IMAGE_TAG ${{ secrets.DOCKER_HUB_USERNAME }}/flask-app:$IMAGE_TAG
-          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/flask-app:$IMAGE_TAG
+          IMAGE=${{ secrets.DOCKER_HUB_USERNAME }}/flask-app:$IMAGE_TAG
+          for i in 1 2 3; do
+            if docker push "$IMAGE"; then
+              exit 0
+            fi
+            echo "Push attempt $i failed; retrying in 10s..."
+            sleep 10
+          done
+          echo "All push attempts failed"
+          exit 1
 
       - name: Cleanup Local Docker Images
         run: |
