@@ -1,850 +1,345 @@
-# DEVOPSIFY REST API WEBSERVER
+# Flask REST API — End-to-End DevOps Project
 
-### Overview
+Production-grade DevOps reference architecture built around a Flask + PostgreSQL REST API. Covers the **full lifecycle** from local development to production-style Kubernetes orchestration with GitOps and observability.
 
-This repository contains a Student CRUD (Create, Read, Update, Delete) REST API built with Python and the Flask web framework. The project is a comprehensive showcase of modern DevOps practices, demonstrating everything from local development and containerization to CI/CD and deployment on both bare-metal and Kubernetes environments.
-
-#### Designed and DevOpsified a RESTful API application using tools:
-
-```txt
-- Application Design Language : Python + Flask Framework
-- Database                    : Postgres Database
-- Automation Scripts          : Bash / Shell Scripting
-- Infrastructure as Code      : Terraform
-- Configuration Management    : Ansible
-- Version Control Filesystem  : Git
-- Containerization            : Docker with Dockerfile creation
-- Container Registry          : Dockerhub
-- One Click Local Setup       : Docker compose; Makefile
-- Container Orchestration     : Kubernetes with Three node Cluster
-- Continuous Integration (CI) : GitHub Actions + Self Hosted Runners
-- Continuous Deployment (CD)  : ArgoCD with Helm Charts
-- Monitoring & Observability  : Prometheus, Grafana, Loki (PLG Stack)
-- Cloud                       : AWS 
-```
-#### AWS Services used
-```txt
-- Compute                    : EC2 t3.xlarge instance
-- Networking                 : VPC, Subnets, Route Tables (RT), NAT Gateways (NAT-GW), Internet Gateways (IGW)
-- IAM & Security             : IAM (Users, Groups, Roles & Permissions), RBAC, Security Groups
-- Storage & Databases        : EBS Instance Storage, S3 bucket for Static file storage, Relation Databases(RDS)
-- Resource Monitoring        : AWS CloudWatch, AWS Cloud-Trail
-```
-
-## REST API Application Design
-
-### I. Project Prerequisites Setup
-
-#### 1. Create a public repository on GitHub and Install Prerequisites
-  - Create a repo and clone it to the local.
-  - Install prerequisites
-    - `python 3.8+` or above version
-    - `Git`
-    - `PostgresDB` in our local.
-      
-#### 2. Create and activate the virtual environment using
-  
-  ```py
-   python3 -m venv .venv
-   source .venv/bin/activate
-  ```
-#### 3. Install the required packages using:
-
-  ```sh
-  pip install Flask Flask-SQLAlchemy Flask-Migrate psycopg2-binary python-dotenv pytest pytest-flask pytest-dotenv gunicorn
-  ```
-
-#### 4. verify and freeze the dependencies
-
-  ```sh
-  pip list
-  pip freeze > requirements.txt 
-  ```
-
-#### 5. Version Control Filesystem setup: Git
-
-  ```sh
-  # Initialize git 
-    git init 
-
-  # Add and commit the files to git
-    git add requirements.txt
-    git commit -m "required packages for designing RESTful API" 
-  
-  # Add remote origin
-    git remote add origin https://github.com/akhil27051999/Flask-REST-API.git
-
-  # Rename default branch to main
-    git branch -M main
-
-  # Push to GitHub
-    git push -u origin main
-  ```
-
-#### 6. Create `.gitignore` file 
-  - To avoid git from tracking files that are not required.
+> **Audience:** This documentation is structured for engineers preparing for **3-5 year DevOps / SRE interviews**. Each module covers the implementation, the deep concepts behind it, troubleshooting from real issues we hit, interview Q&A, STAR stories, and how it maps to the cloud.
 
 ---
 
-### II. Postgres Database Setup
+## High-Level Architecture
 
-#### 1. Install and verify PostgreSQL
-
-  ```sh
-  # Update and Install postgresql package in local
-    sudo apt update && sudo apt install postgresql postgresql-contrib
-
-  # Check if PostgreSQL is running
-    sudo systemctl status postgresql
-  
-  # If not running, start the service
-    sudo systemctl start postgresql
-
-  # Enable PostgreSQL to start on boot
-    sudo systemctl enable postgresql
-  ```
-
-#### 2. PostgresDB Configuration
-  
-  ```sh
-  # Access Postgresdb Shell
-    sudo -u postgres psql
-  
-  # List all users
-    sudo -u postgres psql -c "\du"
-  
-  # List all databases
-    sudo -u postgres psql -c "\l"
-  
-  # Test connection with created user (prompts for password)
-    psql -U student_user -d studentdb -h localhost -W
-  
-  # Or connect directly as postgres user
-    sudo -u postgres psql -d studentdb
-
-  -- Create a new user with password
-    CREATE USER postgres WITH PASSWORD 'postgres123';
-  
-  -- Alternative: Use existing postgres user with new password
-    ALTER USER postgres WITH PASSWORD 'postgres123';
-
-  -- Create database for the application
-    CREATE DATABASE studentdb;
-  
-  -- Grant privileges to the user
-    GRANT ALL PRIVILEGES ON DATABASE studentdb TO postgres;
-  
-  -- Make the user the owner of the database (optional)
-    ALTER DATABASE studentdb OWNER TO postgres;
-
-  -- Connect to specific database
-    \c studentdb
-  
-  -- List all tables
-    \dt
-  
-  -- Describe table structure
-    \d students
-
-  -- View table data
-    SELECT * FROM students;
-
-  -- Exit PostgreSQL shell
-    \q
-  ```
+```
+                                ┌──────────────────────┐
+                                │   Developer pushes   │
+                                │   code to GitHub     │
+                                └──────────┬───────────┘
+                                           │
+                                           ▼
+   ┌────────────────────── CI Pipeline (GitHub Actions) ───────────────--───────┐
+   │                                                                            │
+   │  build job:                                                                │
+   │   • Run unit tests (pytest)                                                │
+   │   • Build Docker image                                                     │
+   │   • Push to DockerHub (tagged with commit SHA)                             │
+   │                                                                            │
+   │  update-helm job:                                                          │
+   │   • sed updates helm/application/values.yaml with new image tag            │
+   │   • Commits & pushes to main branch                                        │
+   │                                                                            │
+   └────────────────────────────────────┬────────────────────────────────-──────┘
+                                        │ git push main
+                                        ▼
+   ┌─────────────────── ArgoCD (GitOps Controller in K8s) ────────────────--────┐
+   │                                                                            │
+   │  Detects values.yaml diff → renders Helm chart → applies new manifests     │
+   │  → Kubernetes does rolling update                                          │
+   │                                                                            │
+   └────────────────────────────────────┬───────────────────────────────-───────┘
+                                        │
+                                        ▼
+   ┌──────────────────── 3-Node Minikube Cluster (Production-like) ───────────┐
+   │                                                                          │
+   │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────────────────┐  │
+   │  │ App Tier        │  │ Database Tier   │  │ Dependent Services Tier  │  │
+   │  │ (minikube)      │  │ (minikube-m02)  │  │ (minikube-m03)           │  │
+   │  │                 │  │                 │  │                          │  │
+   │  │ • Flask API ×3  │  │ • Postgres      │  │ • Vault                  │  │
+   │  │                 │  │                 │  │ • External Secrets Op    │  │
+   │  │                 │  │                 │  │ • Prometheus + AM        │  │
+   │  │                 │  │                 │  │ • Grafana                │  │
+   │  │                 │  │                 │  │ • Loki                   │  │
+   │  │                 │  │                 │  │ • Promtail (DS)          │  │
+   │  │                 │  │                 │  │ • Postgres exporter      │  │
+   │  │                 │  │                 │  │ • Blackbox exporter      │  │
+   │  └─────────────────┘  └─────────────────┘  └──────────────────────────┘  │
+   │                                                                          │
+   └────────────────────────────────────┬─────────────────────────────────────┘
+                                        │ Slack alerts
+                                        ▼
+                              ┌───────────────────┐
+                              │   #alerts channel │
+                              └───────────────────┘
+```
 
 ---
 
-### III. App File Structure Setup
+## Tech Stack
 
-#### 1. Create a `.env` file 
-  - To store the credentials of `postgresdb` in local 
-  - ***Note*** : Don't commit the `.env` into github, use `.gitignore` file to untrack the file by commiting into git.
-
-#### 2. Create a `config.py` file 
-  - For best practice to load configs like `user & db credentials` and `database URL's` into the application without hardcoding them directly into the application.
-  - Use python libraries like `dotenv` to load the `.env` file from our local into the app code.
-  - Make sure we install `psycopg2-binary` adapter to connect our `REST API` app with `postgresdb` service running in our local.
-  - Also we can use `Secrets Managers` like `Hashicorp Vault` / `AWS Secret Manager` to store secrets and use them for applications running in production.
-
-#### 3. Create `models.py` file
-  - `models.py` is where we define the structure of our database using Python classes instead of writing SQL.
-    - Each model = one database table
-    - Each class attribute = one table column
-  - Use `SQLAlchemy` library, models are Python class representations of database tables. They define the schema, relationships, and constraints in one place, allowing the ORM to generate SQL, manage migrations, and let us interact with the database using Python objects instead of raw SQL.
-
-#### 4. Create `routes.py` file
-
-  - File that defines all `CRUD` (`Create`, `Read`, `Update`, `Delete`) API endpoints related to Student management using Flask Blueprints.
-  - It separates routing logic from application setup, following clean architecture principles.
-    - Define `RESTful endpoints` for students
-    - Handle `HTTP requests and responses`
-    - Interact with the database using `SQLAlchemy models`
-    - Perform `basic validation` and `error handling`
-
-#### 5. Create `loggers.py` file
-  - File to configures a centralized logging system that writes structured logs to both the `console` and a `persistent log file`, ensuring consistent, duplicate-free logging across the entire Flask application.
-    - Provide a reusable logging configuration
-    - Enable structured and timestamped logs
-    - Write logs to a `persistent file` for `debugging` and `audits`
-    - Prevent duplicate log entries
-    - Integrate seamlessly with Flask’s built-in logger
-
-#### 6. Create `__init__.py` file
-
-  - App Factory file initializes the Flask application using the application factory pattern:
-    - registers `models` and `routes`
-    - configures `logging`, `database`, and `migrations`
-    - Exposes `basic health` and `home` endpoints for the Student Management API.
+| Layer | Tools |
+|-------|-------|
+| **Application** | Flask 3 + SQLAlchemy + Flask-Migrate + Gunicorn + PostgreSQL 15 |
+| **Testing** | pytest (unit) + Locust (load) |
+| **Containerization** | Docker (multi-stage build) + Docker Compose (local stack) + nginx (reverse proxy) |
+| **CI** | GitHub Actions on a self-hosted runner; SHA-based image tagging; auto-update Helm values |
+| **IaC** | Terraform (AWS VPC, EC2, ALB) + Ansible (system bootstrapping) — written, not deployed |
+| **Orchestration** | Kubernetes via Minikube (3-node cluster mimicking multi-AZ) |
+| **Secrets** | HashiCorp Vault + External Secrets Operator (ESO) |
+| **Packaging** | Helm 3 charts for every component |
+| **GitOps** | ArgoCD with App-of-Apps pattern + multi-source pattern for upstream charts |
+| **Observability** | Prometheus + Grafana + Loki + Promtail + Alertmanager + exporters |
+| **Alerting** | Alertmanager → Slack via Incoming Webhooks |
 
 ---
 
-### IV. Database Migration
+## Module Index
 
-- Requires `Flask-Migrate` installed and `FLASK_APP` set.
-  - Set `FLASK_APP` and initialize migrations:
+The documentation is structured as a curriculum. Read in order for the full picture, or jump to the topic you need.
 
-  ```sh
-  # Set the flask app entrypoint (Mac/Linux)
-    export FLASK_APP=app:create_app
-  
-  # Initialize migrations (run once)
-    flask db init
-  
-  # Generate migration after creating models
-    flask db migrate -m "Initial migration - create students table"
-  
-  # Apply migrations to the DB
-    flask db upgrade
-  ```
-  - Migration folder structure after flask db init:
+### [Module 1 — Local Application Setup](app/local-setup.md)
+**Goal:** Get the Flask API running locally with venv + Postgres + migrations + seed data.
+- Tech stack & architecture
+- Step-by-step walkthrough with the **why** for each step
+- 12 interview Q&A on Python venvs, WSGI, migrations, secrets, connection pooling
+- 2 STAR stories — moving the project broke the venv, AirPlay port conflict
+- Production hardening + AWS mapping
 
-  ```sh
-  migrations/
-  ├── versions/           # Individual migration scripts
-  ├── env.py              # Alembic environment configuration
-  └── script.py.mako      # Migration script template
-  ```
+### [Module 1B — Application Testing](app/app-testing.md)
+**Goal:** Unit tests with pytest + in-memory SQLite, load tests with Locust.
+- The test pyramid + why in-memory SQLite for unit tests
+- pytest fixture pattern + setup/teardown
+- Locust scenarios + headless CI mode
+- 14 interview Q&A on test pyramid, RED method, contract testing, load test interpretation
+- 2 STAR stories — duplicated Prometheus registry breaking tests, finding the throughput limit
 
-  ### Other common migration commands:
+### [Module 2 — Containerization (Docker + Compose)](containerization.md)
+**Goal:** Package the app as a Docker image; orchestrate the multi-service stack with Compose.
+- Multi-stage Dockerfile (build vs main; image size 80 MB vs 400 MB)
+- Layer caching, EXPOSE vs port mapping, CMD vs ENTRYPOINT
+- Compose deep dive: networking, healthchecks, depends_on, volumes
+- 14 troubleshooting issues — including the famous `127.0.0.1` Gunicorn binding bug
+- 20 interview Q&A — containers vs VMs, layers, distroless, signal handling
+- 3 STAR stories — debugging container networking, image optimization, port conflicts
 
-  ```sh
-  # rollback last migration
-    flask db downgrade
-  
-  # show current migration revision
-    flask db current
-  
-  # show migration history
-    flask db history
-  ```
----
+### [Module 3 — CI Pipeline with GitHub Actions](cicd.md)
+**Goal:** On every push, run tests → build image → push to DockerHub → update Helm values in main.
+- Self-hosted vs GitHub-hosted runners (when to use which)
+- Pipeline walkthrough — `build` and `update-helm` jobs
+- Cross-platform `sed`, GH_PAT scopes, secret management
+- The CI → GitOps handoff
+- 14 troubleshooting issues — `setup-python` permission errors, push protection, branch confusion
+- 20 interview Q&A — CI vs CD, OIDC, matrix builds, blue/green
+- 3 STAR stories — `setup-python` mac issue, Slack webhook leak, CI pushing to wrong branch
 
-### V. Common Troubleshooting Issues
+### [Module 4 — Infrastructure as Code (Terraform & Ansible)](iac.md)
+**Goal:** Provision AWS infra (VPC, subnets, NAT, ALB, EC2) with Terraform; configure machines with Ansible.
+- `for_each` vs `count` (with the index-shifting trap)
+- State management — local vs S3 + DynamoDB locking
+- Drift detection (`apply -refresh-only` vs `apply`)
+- Modules, workspaces, backends
+- **24 deep Terraform troubleshooting scenarios** — state lock recovery, drift, RDS replacement traps, EIP costs, rate limits
+- 4 production scenario deep-dives — manually deleted IAM role, CloudFormation migration, leaked tfstate, concurrent applies
+- 32 interview Q&A across Terraform + Ansible
+- 3 STAR stories — state recovery via S3 versioning, RDS rename trap, $4K/mo cost cleanup
 
-  - Connection Issues
-    
-  ```sh
-  # Check if PostgreSQL is listening on correct port
-    sudo netstat -tulpn | grep 5432
-  ```
+### [Module 5 — Kubernetes Orchestration](k8s-orchestration.md)
+**Goal:** Deploy Vault, ESO, Postgres, Flask onto a 3-node minikube cluster.
+- 3-node architecture with workload-to-node placement (`type=application/database/dependent_services`)
+- Vault deployment, init/unseal flow, KV-v2
+- ESO architecture + setup + force-sync pattern
+- **Deep concepts (the bulk of the doc):**
+  - Networking & **CoreDNS** — full query flow, ndots:5, Service types, kube-proxy modes
+  - Storage — PV/PVC/StorageClass, access modes, reclaim policies
+  - Workloads — Deployment vs StatefulSet vs DaemonSet
+  - Probes — liveness vs readiness vs startup
+  - Rollouts & rollbacks — RollingUpdate vs Recreate, maxSurge math
+  - **Autoscaling** — HPA + VPA + Cluster Autoscaler + KEDA with full YAMLs
+  - NetworkPolicies (with DNS gotcha)
+  - RBAC — Role vs ClusterRole
+  - Operators & CRDs — ESO walkthrough as the canonical example
+- ~50 interview Q&A across architecture / networking / storage / workloads / probes / autoscaling / secrets / operators / scenarios
+- 4 STAR stories — pod-to-pod debug, stuck namespace, PVC permissions, HPA implementation
 
-  - Check PostgreSQL logs
-  ```sh
-  sudo tail -f /var/log/postgresql/postgresql-*.log
-  ```
-  - Permission Issues - If you face permission problems, run in psql as a superuser:
-  ```sh
-  GRANT ALL ON SCHEMA public TO student_user;
-  GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO student_user;
-  GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO student_user;
-  ```
+### [Module 6 — GitOps with Helm + ArgoCD](gitops.md)
+**Goal:** Package K8s manifests as Helm charts; deploy via ArgoCD using the App-of-Apps pattern.
+- Why GitOps (push vs pull)
+- Helm deep dive — Chart.yaml, templates, hooks, helpers, sub-charts
+- ArgoCD deep dive — Application CRD, sync policies, App-of-Apps, multi-source pattern, sync waves
+- The full CI → GitOps → Deploy loop
+- 14 troubleshooting issues — CRD version mismatches, ConfigMap-doesn't-restart, sync errors
+- 35 interview Q&A — GitOps principles, Helm internals, ArgoCD architecture, AppProjects, ApplicationSet
+- 4 STAR stories — adopting GitOps, ConfigMap checksum trick, CRD version mismatch, selfHeal saving the day
 
-  - Reset PostgreSQL Password
-  ```sql
-  -- If you forget the postgres user password:
-    ALTER USER postgres WITH PASSWORD 'new_password';
-  ```
----
-
-### VI. Database Seeding Script (seed.py)
-
-  - This script is used to populate the database with sample 100 student records for development and testing purposes.
-  - It creates realistic dummy data and inserts it efficiently using SQLAlchemy.
-    - Seed the database with test data
-    - Simplify local development and testing
-    - Avoid manual data entry
-    - Quickly validate API endpoints and queries
-
----
-
-### VII. Postman Testing Best Practices
-
-**Pre-requisites:**
-- Flask app running on `localhost:5000`
-- PostgreSQL running and connected
-- Migrations applied (`flask db upgrade`)
-- Virtual environment activated
-- Consider automated `Postman tests` and a CI job to run them against a staging environment.
-
-**Postman Testing:**
-- Put requests into a `Collection` and group by `resource`.
-- Use Environment variables (e.g., `base_url`, `student_id`) to make requests portable.
-- Add Tests in Postman to assert `response codes` and `JSON structure`.
-- Use pre-request scripts to dynamically set `student_id` from response data.
-
-**Common issues:**
-- `Connection refused` — Ensure Flask app is running and listening on port `5000`.
-- `DB errors` — confirm Postgres is running, credentials and `DATABASE_URL` are correct.
-- `404 errors` — check URL and `student_id`.
-- `Validation errors` — ensure Content-Type header and JSON payloads are correct.
+### [Module 7 — Observability (Prometheus + Grafana + Loki + Alertmanager)](observability.md)
+**Goal:** Build a full observability layer with metrics, logs, dashboards, and Slack alerts.
+- Three pillars (metrics, logs, traces); USE & RED methods
+- Component-by-component setup
+- Application instrumentation (`prometheus-flask-exporter`)
+- 10 alert rules with severity + USE/RED classification
+- Pre-loaded Grafana dashboards (5 community dashboards)
+- Slack integration — using `slack_api_url_file` to keep webhook out of Git
+- 18 troubleshooting issues — PVC permission fixes, schema mismatches, cardinality issues
+- 30+ interview Q&A across SLI/SLO/SLA, USE/RED, Prometheus internals, Loki vs ELK, Grafana, real scenarios
+- 4 STAR stories — Prometheus permission debug, Slack webhook leak, true-positive alert, observability from scratch
 
 ---
 
-### VIII. Load Testing observation
+## Why This Order Matters
 
-- `API Stability`: All core endpoints remained stable under concurrent load, with lightweight endpoints `(/ and /health)` consistently responding `fast and without failures`.
-- `Read Performance`: `GET /students` handled moderate concurrency well but showed `increased latency` at `higher record counts` due to large response payloads, indicating a need for pagination in production.
-- `Write Performance`: `POST /students` throughput was `lower compared to reads`, with `failures caused mainly by unique email constraints`, highlighting the importance of `unique test data and write optimization`.
-- `Overall Results`: The API achieved `~32–35` `requests/sec` aggregate throughput, demonstrated strong performance for read-heavy workloads, and remained reliable under mixed traffic patterns.
-
-
-## Project local setup using Makefile
-
-**1. Install dependencies**
-  ```sh
-  # using pip 
-    pip install -r requirements.txt
-
-  # or using make install
-    make install
-  ```
-
-**2. Run the App**
-  ```sh
-  # using make run
-    make run
-  ```
-
-**3. Flask app will start at:**
-  ```url
-  http://127.0.0.1:5000
-  ```
-
-  - Endpoints:
-    - / → Welcome message
-    - /health → Health check
-    - /students → Manage students
-      
-**4. Run all unit tests:**
-  ```sh
-  # using make test
-    make test
-
-  # or directly
-    pytest -v
-  ```
-
-## Containerising the REST API
-
-### Containerised REST API with the Docker best practices and reduced both Size and Build Time of my Docker Image:
-  - Used `python:3.10-alpine` for base image which resulted in reducing the image size because of it's lightweight version that supports the build process without impacting it's functionality. as a resultant the application image size reduced from `1.26GB` to `176MB`.
-
-  - Followed Multi-stage Dockerfile method, this helped to reduce the image size from `176MB` to `110MB`, This approach ensures that only the essential runtime files are included in the final image, reducing size and improving performance.
-
-  - Overall I managed to reduce the original `1.26GB` image to just `110MB`, achieving a `91.27%` size decrease while maintaining the same functionality and improving rebuild times by an average of 20 seconds.
-
-### Docker Commands
-
-**1. Build the Docker Image:**
-
-  - Built the image with semantic versioning tags:
-  ```sh
-  make docker-build DOCKER_IMAGE_TAG=1.0.1
-  ```
-
-  or directly with Docker:
-  ```sh
-  docker build -f app/Dockerfile -t ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} .
-  ```
-  - We can change the `DOCKER_IMAGE_TAG` to any version.
-
-**2. Run the Docker Container:**
-  - Run the container 
-  ```sh
-  make docker-run DOCKER_IMAGE_TAG=1.0.1
-  ```
-  or directly with Docker:
-
-  ```sh
-  docker run -d --env-file .env -p 5000:5000 ${DOCKER_CONTAINER} ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
-  ```
-  - Now the API will be available at:
-  ```url
-  http://localhost:5000
-  ```
-
-**3. To Remove the Containers:**
-  - To remove the containers using make command
-  ```sh
-  make docker-stop
-  ```
-
-  or directly with Docker:
-
-  ```sh 
-  docker stop ${DOCKER_CONTAINER}
-  docker rm ${DOCKER_CONTAINER}
-  ```
-
-**4. To Remove the unused images:**
-  - To remove the images using make command
-  ```sh
-  make docker-clean
-  ```
-
-  or directly with Docker:
-
-  ```sh
-  docker rmi ${DOCKER_IMAGE}:${DOCKER_IMAGE_TAG}
-  ```
-
-**5. For Troubleshooting Container issue:**
-  - To check container logs using make command
-  ```sh
-  make docker logs
-  ```
-  or directly with Docker:
-
-  ```sh
-  docker logs -f ${DOCKER_CONTAINER}
-  ```
-  
-## One click local development setup
-
-**Created docker-compose.yml file to containerise Flask (API) and Postgres (DB) together, with persistent volumes for one click local development setup.**
-
-### Docker Compose Commands
-
-**1. To start the service stack**
-  ```sh
-  docker compose up -d --build
-  ```
-  or 
-
-  ```txt
-  make up
-  ```
-
-**2. To stop and remove everything (including volumes)**
-  ```sh
-  docker compose down -v
-  ```
-
-  or 
-
-  ```txt
-  make down
-  ```
-
-### For Database Migration & Seeding
-**After starting the containers, you need to run migrations (to create tables) and optionally seed data.**
-
-**1. Apply migrations inside the Flask container**
-  ```sh
-  docker exec -it flask-container flask db upgrade
-  ```
-
-  or 
-
-  ```txt
-  make migrate
-  ```
-
-**2. To Seed the database with initial data**
-  ```sh
-  docker exec -it flask-container python seed.py
-  ```
-
-  or 
-
-  ```txt
-  make seed
-  ```
-
-**3. Verify Database**
-
-- To connect into the Postgres container
-  ```sh
-  docker exec -it postgres-container psql -U postgres -d studentdb
-  ```
-
-- Then inside psql:
-  ```sql
-  \dt           -- list tables
-  SELECT * FROM students LIMIT 5;
-  ```
-
-**4. To Run API container (depends on DB + migrations + seed)**
-
-  ```txt
-  make run
-  ```
-
-### API Endpoints
-
-- Once containers are up, the API will be available at:
-
-  http://localhost:5000/students
-
-  http://localhost:5000/health
-
-
-## Setup CI pipeline
-
-**Automation for build, test, and publish of Docker images using GitHub Actions workflow for CI pipeline**
-
-### pipeline stages
-- Build API → make sure it compiles.
-- Run tests → unit tests should pass.
-- Lint → run flake8/pylint/eslint.
-- Docker login → authenticate to registry (DockerHub/GHCR).
-- Docker build & push → push tagged image.
-
-### Triggering
-
-- Automatically when changes are made inside /api/**.
-- Manual trigger (workflow_dispatch).
-
-### Self-hosted runner
-- GitHub Actions running on our laptop/VM to simulate real-world self-hosted CI.
-
-`At the end`: "Every commit to main will test your code and publish a Docker image"
-
-## Deploy on Bare Metal
-**To deploy on a “production-like” environment without Kubernetes — just Docker + Nginx on a Vagrant box.**
-
-### Key Points
-
-- Vagrantfile creates a VM (e.g., Ubuntu).
-- A provisioning script installs Docker, Docker Compose, Nginx.
-- docker-compose.yml deploys:
-  - 2 API containers (scale with replicas).
-  - 1 Postgres DB container.
-  - 1 Nginx container (load balances API replicas).
-
-### Nginx config
-
-```nginx
-upstream api_backend {
-    server api1:5000;
-    server api2:5000;
-}
-server {
-    listen 8080;
-    location / {
-        proxy_pass http://api_backend;
-    }
-}
 ```
-- **Access API at http://localhost:8080/api/v1/students.**
-`At the end`: "we’ll have a mini production setup with scaling + load balancing".
-
-## Setup Kubernetes Cluster
-
-**Spin up a 3-node Kubernetes cluster with Minikube.**
-
-### Key Points
-
-- **Start minikube with 3 nodes:**
-  ```sh
-  minikube start --nodes=3
-  ```
-
-- **Label nodes:**
-  - Node A → type=application
-  - Node B → type=database
-  - Node C → type=dependent_services
-
-- This enforces workload isolation (apps on one node, DB on another, monitoring tools on another).
-
-### Minikube Cluster setup commands
-
-```sh
-# Start a 3-node cluster
-minikube start --nodes 3
-
-# Check all nodes
-kubectl get nodes -o wide
-
-# Label nodes for workload separation
-kubectl label node minikube type=application
-kubectl label node minikube-m02 type=database
-kubectl label node minikube-m03 type=dependent_services
+1. Local setup           → understand the app
+   ↓
+2. Containerize          → make it portable
+   ↓
+3. CI pipeline           → automate build + test + push
+   ↓
+4. IaC                   → provision infra reproducibly
+   ↓
+5. Kubernetes            → run it at scale
+   ↓
+6. GitOps                → declarative, audited deployments
+   ↓
+7. Observability         → see what's happening in production
 ```
 
-`At the end`: "we have a real K8s cluster with node roles".
-
-## Deploy API, DB and other services in Kubernetes
-
-**Move from Docker Compose → Kubernetes deployment.**
-
-### Key Points
-
-- **Manifests should be modular:**
-  - **application.yml** → namespace, configmap, secret, deployment, service for API.
-  - **database.yml** → namespace, deployment, service for Postgres.
-
-- **Init container** → runs DB migrations before starting API.
-- **ConfigMaps** → non-sensitive configs (e.g., DB host).
-- **Secrets** → sensitive info (DB password).
-- **External Secrets Operator + Vault** → manage secrets properly.
-- **Services** →
-  - ClusterIP for DB (internal only).
-  - NodePort/LoadBalancer for API (external access).
-- **Namespace isolation** → student-api for app + db, others for observability.
-- **Test via Postman**: all endpoints should work and return 200.
-
-### K8s deployment and verification commands
-
-- **Deploy API + DB**
-  ```sh
-  kubectl apply -f k8s/database.yml
-  kubectl apply -f k8s/application.yml
-  ```
-
-- **Deploy Vault + ESO**
-  ```sh
-  kubectl apply -f k8s/vault.yml
-  kubectl apply -f k8s/external-secrets.yml
-  ```
-- **Verify Deployments**
-  ```sh
-  # Check namespaces
-  kubectl get ns
-
-  # Check pods
-  kubectl get pods -n student-api
-
-  # Check deployments
-  kubectl get deployments -n student-api
-
-  # Check services
-  kubectl get svc -n student-api
-  ```
-- **Debugging**
-  ```sh
-  # Describe pod for events/logs
-  kubectl describe pod <pod-name> -n student-api
-
-  # View container logs
-  kubectl logs -f <pod-name> -n student-api
-
-  # Exec into a running pod
-  kubectl exec -it <pod-name> -n student-api -- /bin/sh
-  ```
-- **Port Forward (if no LoadBalancer)**
-  ```sh
-  kubectl port-forward svc/student-api-service 8080:80 -n student-api
-  ```
-  - Now access API at: **http://localhost:8080/api/v1/students**
-
-- **Testing in Kubernetes**
-  ```sh
-  # Healthcheck endpoint
-  curl http://<node-ip>:<nodePort>/healthcheck
-  ```
-  - Expected response:
-  ```json
-  {"status": "ok"}
-  ```
-
-- **Cleanup**
-  ```sh
-  kubectl delete -f k8s/application.yml
-  kubectl delete -f k8s/database.yml
-  kubectl delete -f k8s/vault.yml
-  kubectl delete -f k8s/external-secrets.yml
-  ```
-  
-`At the end`: "Our app is cloud-ready, secure, and scalable on Kubernetes".
-
-## Helm-Based Deployments (Commands + Notes)
-
-All repository Helm charts live in `/helm`. Charts included:
-- helm/student-api (application chart)
-- helm/postgres (postgres chart — can be community chart copied)
-- helm/vault (vault chart)
-- helm/prometheus, helm/loki, helm/grafana, helm/promtail, etc.
-
-Create namespace:
-```bash
-kubectl create ns student-api || true
-```
-
-Install API chart:
-```bash
-helm install student-api helm/student-api -n student-api
-```
-
-Install DB chart:
-```bash
-helm install student-db helm/postgres -n student-api
-```
-
-Notes:
-- Use `values.yaml` to override image tag, replicas, env vars, service type.
-- DB migrations are triggered by the API chart using an initContainer (ensure initContainer has DB connection and credentials).
-- To pass secrets, use sealed-secrets/ExternalSecrets/Vault integration — do not put secrets in values.yaml in plaintext.
-
-Upgrade after changes (code or chart values):
-```bash
-helm upgrade student-api helm/student-api -n student-api
-```
-
-Uninstall:
-```bash
-helm uninstall student-api -n student-api
-helm uninstall student-db -n student-api
-```
-
-Verify pods:
-```bash
-kubectl get pods -n student-api
-```
-
-Test API:
-```bash
-# If NodePort or LoadBalancer available, hit the external IP; otherwise port-forward
-curl http://<NODE-IP>:<NODEPORT>/api/v1/students
-# or
-kubectl port-forward svc/student-api-service 8080:80 -n student-api
-curl http://localhost:8080/api/v1/students
-```
-
-Best practices:
-- Keep values.yaml minimal; environment-specific overrides via `values.prod.yaml`.
-- Use imagePullSecrets for private registries.
-- Use probes (liveness/readiness) for reliable rollouts.
-
-`At the end`: Our entire stack is deployed declaratively using Helm templates, enabling repeatable, scalable deployments.
+Each layer depends on the previous. The CI pipeline (3) makes sense because we can build a container (2) of the app (1). Kubernetes (5) is meaningful because we have a CI artifact (3). GitOps (6) governs Kubernetes (5). Observability (7) closes the loop — you can finally see what your fully-automated, fully-orchestrated system is doing in real time.
 
 ---
 
-## GitOps with ArgoCD (Commands + Notes)
+## Quick Start
 
-Install ArgoCD (apply manifests in repository):
+**Prerequisites:** macOS / Linux, Python 3.10+, Docker Desktop, kubectl, helm, minikube, brew (for installs).
+
+### 1. Local app
 ```bash
-kubectl create ns argocd || true
-kubectl apply -f argocd/ -n argocd
+git clone https://github.com/akhil27051999/Flask-REST-API.git
+cd Flask-REST-API
+python3 -m venv venv && source venv/bin/activate
+pip install -r app/requirements.txt
+# Configure .env (see Module 1) and run:
+flask db upgrade
+python app/seed.py
+flask run
 ```
 
-Port-forward ArgoCD UI:
+### 2. Containerized stack (Docker Compose)
 ```bash
-kubectl port-forward svc/argocd-server -n argocd 8080:443
-# Access UI: https://localhost:8080
+export ENV_FILE=.env
+docker compose up -d --build
+docker exec flask-app-container flask db upgrade --directory app/migrations
+docker exec -e PYTHONPATH=/api flask-app-container python /api/app/seed.py
+curl http://localhost/students/3
 ```
 
-ArgoCD key points:
-- Applications, repo credentials, and projects are stored declaratively under `/argocd/`.
-- ArgoCD watches the Helm charts and `values.yaml` changes, then syncs automatically.
-- GitHub Actions updates `helm/student-api/values.yaml` (image.tag) after CI build.
-- ArgoCD picks up the change and deploys via auto-sync.
-
-Apply ArgoCD resources (if you change them):
+### 3. Kubernetes stack
 ```bash
-kubectl apply -f argocd/ -n argocd
+# Cluster
+minikube start --nodes=3 --driver=docker --cpus=2 --memory=2048
+kubectl label node minikube       type=application --overwrite
+kubectl label node minikube-m02   type=database --overwrite
+kubectl label node minikube-m03   type=dependent_services --overwrite
+
+# Install ArgoCD
+helm repo add argo https://argoproj.github.io/argo-helm
+helm install argocd argo/argo-cd -n argocd --create-namespace
+
+# Bootstrap everything via App-of-Apps
+kubectl apply -f argocd/root-app.yaml
+
+# Manual bootstrap steps (Vault unseal, vault-token secret) — see Module 5
 ```
 
-`At the end`: We achieve full GitOps — automated, version-controlled, self-correcting deployments.
+### 4. Trigger the GitOps loop
+Edit `helm/application/values.yaml` (e.g., bump replicas), commit, push:
+```bash
+git add helm/application/values.yaml
+git commit -m "scale flask-api to 3"
+git push origin main
+# ArgoCD picks it up within 3 min — or trigger immediate sync:
+kubectl patch application flask-api -n argocd --type merge \
+  -p '{"operation":{"sync":{"revision":"main"}}}'
+```
 
 ---
 
-## Observability Stack (Prometheus, Loki, Grafana, Exporters) — Helm (Commands)
+## Repository Layout
 
-Create observability namespace:
-```bash
-kubectl create ns observability || true
 ```
-
-Install components (Helm charts under `helm/` in the repo):
-```bash
-helm install prometheus helm/prometheus -n observability
-helm install loki helm/loki -n observability
-helm install promtail helm/promtail -n observability
-helm install grafana helm/grafana -n observability
+Flask-REST-API/
+├── app/                    # Flask source code + Dockerfile + requirements.txt + migrations
+├── tests/                  # pytest unit tests + Locust load tests
+├── nginx/                  # nginx reverse proxy config + Dockerfile
+├── docker-compose.yaml     # Local multi-service stack
+├── .github/workflows/      # CI pipeline
+├── terraform/              # AWS infrastructure (VPC, EC2, ALB, etc.)
+├── ansible/                # Configuration management for VMs
+├── k8s/                    # Raw K8s manifests (legacy/reference; see helm/ for current)
+├── helm/                   # Helm charts for every component
+│   ├── application/        # Flask app
+│   ├── vault/              # HashiCorp Vault
+│   ├── external-secrets/   # ESO + custom resources
+│   ├── database/           # PostgreSQL
+│   ├── prometheus/         # Prometheus + Alertmanager
+│   ├── grafana/            # Grafana
+│   ├── loki/               # Loki
+│   ├── promtail/           # Promtail
+│   ├── postgres-exporter/  # Postgres metrics exporter
+│   └── blackbox-exporter/  # HTTP probe exporter
+├── argocd/                 # ArgoCD Applications
+│   ├── root-app.yaml       # The App-of-Apps that manages everything
+│   ├── vault.yaml
+│   ├── external-secrets.yaml
+│   ├── database.yaml
+│   ├── application.yaml
+│   └── observability-*.yaml
+└── docs/                   # This documentation (modules + images)
 ```
-
-Verify:
-```bash
-kubectl get pods -n observability
-```
-
-Grafana access:
-```bash
-kubectl port-forward svc/grafana -n observability 3000:80
-# Open http://localhost:3000
-# Default credentials depend on chart (check secret or values)
-```
-
-Data sources to configure in Grafana:
-- Prometheus
-- Loki
-
-Promtail:
-- Pulls logs from application pods (via label selectors)
-- Ensure promtail's serviceAccount has permissions to read pod logs
-
-`At the end`: Full end-to-end observability for logs + metrics + service uptime.
 
 ---
 
-## Dashboards & Alerts (Grafana + Alertmanager + Slack) — Commands & Notes
+## Skills Demonstrated
 
-Dashboards:
-- Import or provision dashboards for:
-  - DB metrics (Postgres exporter)
-  - Application logs (Loki)
-  - Node & kube-state metrics
-  - Blackbox monitoring (uptime/latency)
+By building this project end-to-end, you've practiced every tool a 3-5 yr DevOps/SRE role expects:
 
-Alertmanager Slack integration (example snippet to add to Alertmanager config):
-```yaml
-receivers:
-  - name: 'slack'
-    slack_configs:
-      - channel: '#alerts'
-        text: " Alert: {{ .CommonAnnotations.description }}"
-```
-
-Apply alert rules (example):
-```bash
-kubectl apply -f observability/alerts/ -n observability
-```
-
-Test alert:
-```bash
-kubectl apply -f observability/alerts/test-alert.yaml -n observability
-```
-
-Common alert conditions:
-- CPU > 80% for 5 minutes
-- Disk > 85%
-- 5xx error spike in 10 minutes
-- Latency SLI breaches (p90/p95/p99)
-- Pod restart spikes for DB/Vault/ArgoCD
-
-`At the end`: Production-grade observability with alerting to Slack.
+- ✅ **Python web app** with proper structure, migrations, testing
+- ✅ **Multi-stage Dockerfile** with layer caching, alpine base, non-root patterns
+- ✅ **Docker Compose** for local multi-service development
+- ✅ **CI/CD** with GitHub Actions (self-hosted runner) → DockerHub → automatic Helm updates
+- ✅ **Terraform** for AWS provisioning (VPC, subnets, NAT, SGs, ALB, EC2) with state, modules, lifecycle
+- ✅ **Ansible** for configuration management (idempotent, role-based pattern)
+- ✅ **Kubernetes** — multi-node cluster, node labels, all major workload types, networking, storage, RBAC, autoscaling
+- ✅ **HashiCorp Vault** — initialization, unsealing, KV secrets engine
+- ✅ **External Secrets Operator** — bridging Vault and K8s native Secrets
+- ✅ **Helm** — chart structure, templating, hooks, releases
+- ✅ **ArgoCD** — Applications, App-of-Apps, multi-source, sync policies, selfHeal
+- ✅ **Observability stack** — Prometheus, Grafana, Loki, Promtail, Alertmanager, exporters
+- ✅ **PromQL + LogQL** for queries
+- ✅ **Slack alerting** with proper secret handling
+- ✅ **GitOps workflows** — pull-based deploys, drift detection, rollbacks via git revert
+- ✅ **Real production troubleshooting** — Gunicorn binding, fsGroup permissions, push protection, sync errors, state locking
 
 ---
 
-## Closing Statements
+## Interview Prep Checklist
 
-This repository demonstrates a complete development-to-production workflow:
-- Local development with virtualenv and Docker Compose
-- CI that builds images and updates Helm values
-- Declarative deployments using Helm charts
-- GitOps delivery using ArgoCD
-- Production-grade observability using Prometheus, Loki, and Grafana
+For each module, you should be able to:
 
-Our entire stack is deployed declaratively using Helm templates, enabling repeatable, scalable deployments. We achieve full GitOps — automated, version-controlled, self-correcting deployments. We also provide end-to-end observability and alerts to help operate the system in production.
+- [ ] **Explain the architecture** — what it does and why it's structured that way
+- [ ] **Walk through one debugging story** (use the STAR stories as templates)
+- [ ] **Answer 5+ deep questions** on the topic from memory
+- [ ] **Sketch the data flow** on a whiteboard
+- [ ] **Discuss production hardening** — what would change at scale
+- [ ] **Map to cloud equivalents** (AWS / GCP / Azure)
+
+---
+
+## Contributing / Extending
+
+This project is a learning + interview prep artifact. Suggested extensions to deepen further:
+
+- Add **distributed tracing** (Jaeger / Tempo + OpenTelemetry) for the third pillar
+- Add **service mesh** (Istio / Linkerd) for mTLS + traffic policies
+- Add **chaos engineering** (Litmus / Chaos Mesh) — kill pods during load tests
+- Migrate Postgres from Deployment → StatefulSet with HA replication
+- Add **policy as code** with OPA Gatekeeper / Kyverno
+- Add **cert-manager** + Ingress with TLS
+- Implement **canary deployments** with Argo Rollouts
+
+---
+
+## License
+
+MIT (or your license of choice).
+
+## Author
+
+Akhil Thyadi — built as a hands-on portfolio project for DevOps / SRE roles.
