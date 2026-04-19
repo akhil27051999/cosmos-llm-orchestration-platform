@@ -69,29 +69,33 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - name: Checkout Helm Charts
+      - name: Checkout main branch
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
 
       - name: Configure Git
         run: |
-          git config --global user.name "akhil27051999"
-          git config --global user.email "thyadiakhil@gmail.com"
+          git config user.name "akhil27051999"
+          git config user.email "thyadiakhil@gmail.com"
 
-      - name: Ensure main branch is up to date
-        run: git pull origin main
-
-      - name: Update image tag using sed
+      - name: Update image tag in Helm values
         run: |
           echo "Updating image tag to $IMAGE_TAG..."
-          # Using sed - universal and reliable
-          sed -i 's/^\([[:space:]]*tag:[[:space:]]*\).*/\1'"$IMAGE_TAG"'/' ./helm/application/values.yaml
+          sed -i.bak "s|^\([[:space:]]*tag:[[:space:]]*\).*|\1$IMAGE_TAG|" helm/application/values.yaml
+          rm -f helm/application/values.yaml.bak
           echo "Updated Helm values.yaml:"
-          cat ./helm/application/values.yaml
+          cat helm/application/values.yaml
         env:
           IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
 
-      - name: Commit and Push Changes
+      - name: Commit and push
         run: |
-          git add ./helm/application/values.yaml
-          git commit -m "Update Flask App image tag to $IMAGE_TAG" || echo "No changes to commit"
-          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git main
+          git add helm/application/values.yaml
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "ci: update flask-app image tag to $IMAGE_TAG [skip ci]"
+          git push origin main
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
