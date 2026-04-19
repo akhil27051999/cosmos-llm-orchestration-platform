@@ -8,7 +8,7 @@ nodeSelector:
 config:
   datasource:
     host: postgres.student-api.svc.cluster.local
-    port: 5432
+    port: "5432"
     user: postgres
     # Password from existing K8s secret synced by ESO
     passwordSecret:
