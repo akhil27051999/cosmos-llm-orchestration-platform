@@ -1,0 +1,26 @@
+## Values for prometheus-community/prometheus-postgres-exporter
+## https://github.com/prometheus-community/helm-charts/tree/main/charts/prometheus-postgres-exporter
+
+nodeSelector:
+  type: dependent_services
+
+# Connect to postgres service in student-api namespace
+config:
+  datasource:
+    host: postgres.student-api.svc.cluster.local
+    port: 5432
+    user: postgres
+    # Password from existing K8s secret synced by ESO
+    passwordSecret:
+      name: postgres-secret
+      key: POSTGRES_PASSWORD
+    database: studentdb
+    sslmode: disable
+
+service:
+  type: ClusterIP
+  port: 9187
+
+# Service annotation so Prometheus auto-discovers it (optional — we have static scrape config)
+serviceMonitor:
+  enabled: false
