@@ -10,6 +10,12 @@ server:
     size: 5Gi
     storageClass: standard
   retention: "7d"
+  # Fix permission errors on PVC
+  securityContext:
+    runAsUser: 65534
+    runAsNonRoot: true
+    runAsGroup: 65534
+    fsGroup: 65534
   service:
     type: ClusterIP
     servicePort: 9090
@@ -60,6 +66,12 @@ alertmanager:
   persistence:
     size: 1Gi
     storageClass: standard
+  # Fix permission errors on PVC
+  securityContext:
+    runAsUser: 65534
+    runAsNonRoot: true
+    runAsGroup: 65534
+    fsGroup: 65534
   config:
     global:
       resolve_timeout: 5m
@@ -68,21 +80,15 @@ alertmanager:
       group_wait: 10s
       group_interval: 5m
       repeat_interval: 12h
-      receiver: 'slack-notifications'
+      receiver: 'null-receiver'
     receivers:
-      - name: 'slack-notifications'
-        slack_configs:
-          - api_url: '${SLACK_WEBHOOK_URL}'
-            channel: '#alerts'
-            send_resolved: true
-            title: '{{ .Status | toUpper }} - {{ .GroupLabels.alertname }}'
-            text: |-
-              {{ range .Alerts }}
-              *Severity:* {{ .Labels.severity }}
-              *Summary:* {{ .Annotations.summary }}
-              *Description:* {{ .Annotations.description }}
-              *Instance:* {{ .Labels.instance }}
-              {{ end }}
+      - name: 'null-receiver'
+      # Slack receiver — uncomment and set webhook URL to enable Slack alerts:
+      # - name: 'slack-notifications'
+      #   slack_configs:
+      #     - api_url: 'https://hooks.slack.com/services/XXX/YYY/ZZZ'
+      #       channel: '#alerts'
+      #       send_resolved: true
 
 # Node exporter — runs as DaemonSet on every node (cluster-wide metrics)
 prometheus-node-exporter:

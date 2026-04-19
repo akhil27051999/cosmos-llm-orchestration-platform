@@ -12,6 +12,16 @@ singleBinary:
     enabled: true
     size: 5Gi
     storageClass: standard
+  # Fix permission errors on PVC
+  podSecurityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+  containerSecurityContext:
+    runAsUser: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
 
 loki:
   auth_enabled: false
