@@ -49,7 +49,6 @@ vaultToken:
 # ClusterSecretStore configuration
 clusterSecretStores:
   - name: vault-backend
-  - name: vault-backend-monitoring
 
 # ExternalSecret configuration
 externalSecrets:
@@ -66,32 +65,3 @@ externalSecrets:
       - secretKey: "POSTGRES_PASSWORD"
         vaultKey: "studentdb"
         vaultProperty: "POSTGRES_PASSWORD"
-  
-  - name: postgres-exporter-secret
-    namespace: observability
-    refreshInterval: "1h"
-    targetSecret: postgres-exporter-secret
-    secretStore: vault-backend-monitoring
-    data:
-      - secretKey: POSTGRES_PASSWORD
-        vaultKey: postgres-exporter
-        vaultProperty: password
-      - secretKey: POSTGRES_USER
-        vaultKey: postgres-exporter
-        vaultProperty: username
-      - secretKey: DATA_SOURCE_URI
-        vaultKey: postgres-exporter
-        vaultProperty: connection-uri
-
-  - name: grafana-secret
-    namespace: observability
-    refreshInterval: "1h"
-    targetSecret: grafana-secret
-    secretStore: vault-backend-monitoring
-    data:
-      - secretKey: admin-password
-        vaultKey: grafana
-        vaultProperty: admin-password
-      - secretKey: admin-user
-        vaultKey: grafana
-        vaultProperty: admin-user
