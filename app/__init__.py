@@ -24,8 +24,7 @@ def create_app(config_class=None):
     app.logger.propagate = False  # Prevent double logging
 
     # Prometheus metrics — exposes /metrics endpoint
-    metrics = PrometheusMetrics(app)
-    metrics.info('flask_app_info', 'Flask App Info', version='1.0.0')
+    PrometheusMetrics(app)
 
     app.logger.info("Student Management API started successfully.")
 
