@@ -171,6 +171,32 @@ The documentation is structured as a curriculum. Read in order for the full pict
 - 30+ interview Q&A across SLI/SLO/SLA, USE/RED, Prometheus internals, Loki vs ELK, Grafana, real scenarios
 - 4 STAR stories — Prometheus permission debug, Slack webhook leak, true-positive alert, observability from scratch
 
+### [Module 8 — AWS Cloud Services](aws.md)
+**Goal:** Cloud-native counterpart to the project — deep dives on Networking, IAM/Security, Databases, Storage, plus Compute, Containers, Messaging, Observability, Cost.
+- **Networking (heavy):** VPC design, subnets & routing, IGW/NAT, SG vs NACL, VPC endpoints, ALB/NLB/GWLB, Route 53, CloudFront, Peering/TGW/PrivateLink, Direct Connect/VPN — 20 interview Q&A
+- **IAM & Security (heavy):** principals & policies, evaluation logic, STS & AssumeRole, IRSA, KMS envelope encryption, Secrets Manager vs SSM, GuardDuty/Security Hub/Config/CloudTrail, WAF/Shield, Organizations + SCPs, Identity Center — 20 interview Q&A
+- **Databases:** RDS vs Aurora vs DynamoDB vs ElastiCache vs Redshift; Multi-AZ vs read replicas; DynamoDB partitions/indexes/consistency; DMS migration — 15 interview Q&A
+- **Storage:** S3 classes/lifecycle/encryption/access, EBS types, EFS/FSx, Storage Gateway, AWS Backup — 10 interview Q&A
+- **The rest:** EC2 families & purchasing, ASGs/placement groups, Lambda, ECS/EKS/Fargate, ECR, SQS/SNS/EventBridge/Step Functions, API Gateway, CloudWatch/X-Ray/AMP/AMG, Savings Plans vs Spot
+- 4 STAR stories — $4k NAT GW cleanup, confused-deputy fix, S3 public-bucket drill, cross-account IRSA
+- Well-Architected hardening checklist + full "Minikube → AWS" migration mapping
+
+### [Module 9 — Git Version Control](git.md)
+**Goal:** Own Git end-to-end — object model, the three trees, branching/merging/rebasing, remotes, recovery from mistakes.
+- **Internals:** blobs/trees/commits/tags, refs, the index, packfiles, SHA-1 → SHA-256
+- **The three trees:** working dir / index / HEAD — the mental model for every command
+- **Commands:** inspect, stage, commit, branch, restore/reset/revert (with the tradeoffs table)
+- **Branching models:** Trunk-Based vs GitHub Flow vs GitFlow — when to pick what
+- **Merge vs Rebase vs Cherry-Pick:** history tradeoffs + when each is dangerous
+- **Remote ops:** fetch vs pull, `--force-with-lease`, refspecs, credential helpers
+- **Recovery:** `reflog`, `fsck --lost-found`, bad-rebase rescue, force-push undo, secret-purge via `git filter-repo`
+- **Advanced:** stash, bisect, tags, signed commits, worktrees, submodules/subtrees/LFS, sparse checkout
+- **Hooks:** `pre-commit`, `commit-msg`, `pre-push`, server-side; `pre-commit` framework for team sharing
+- 15 real-world troubleshooting scenarios (diverged branches, secrets in history, generated-file conflicts)
+- 25 interview Q&A
+- 4 STAR stories — leaked webhook + history purge, cross-branch CI contamination, reflog rescue, `range-diff` proving dev/main parity
+- Conventions used in this project + cheat sheet
+
 ---
 
 ## Why This Order Matters
