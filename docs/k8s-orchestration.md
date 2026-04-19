@@ -40,17 +40,17 @@
                         Three-Node Minikube Cluster
                         (mimics multi-AZ K8s in cloud)
 
-┌─────────────────────────────────────────────────────────────────────┐
+┌───────────────────────────────────────────────────────────────--──────┐
 │                                                                       │
 │  Node: minikube           Node: minikube-m02       Node: minikube-m03 │
-│  Label: type=application  Label: type=database     Label: type=        │
-│  (Control plane)          (Worker)                  dependent_services │
-│                                                     (Worker)           │
-│  ┌──────────────────┐    ┌──────────────────┐    ┌─────────────────┐ │
-│  │ flask-api        │    │ postgres         │    │ vault           │ │
-│  │ (3 replicas)     │    │ (single replica) │    │ (single replica)│ │
-│  │ student-api ns   │    │ student-api ns   │    │ vault ns        │ │
-│  └──────────────────┘    └──────────────────┘    │                 │ │
+│  Label: type=application  Label: type=database     Label: type=       │
+│  (Control plane)          (Worker)                  dependent_services│
+│                                                     (Worker)          │
+│  ┌──────────────────┐    ┌──────────────────┐     ┌─────────────────┐ │
+│  │ flask-api        │    │ postgres         │     │ vault           │ │
+│  │ (3 replicas)     │    │ (single replica) │     │ (single replica)│ │
+│  │ student-api ns   │    │ student-api ns   │     │ vault ns        │ │
+│  └──────────────────┘    └──────────────────┘     │                 │ │
 │                                                   │ external-secrets│ │
 │                                                   │ -operator       │ │
 │                                                   │ external-secrets│ │
