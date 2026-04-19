@@ -10,7 +10,7 @@ app:
     repository: akhilthyadi/flask-app
     tag: 7d72e32
     pullPolicy: IfNotPresent
-  replicaCount: 2
+  replicaCount: 3
   service:
     name: flask-api-service
     type: NodePort
