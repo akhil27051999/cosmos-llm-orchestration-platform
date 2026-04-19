@@ -22,6 +22,18 @@ singleBinary:
     runAsUser: 10001
     runAsGroup: 10001
     runAsNonRoot: true
+  # Init container to chown the storage directory (minikube hostpath workaround)
+  extraVolumeMounts: []
+  initContainers:
+    - name: fix-permissions
+      image: busybox
+      command: ['sh', '-c', 'mkdir -p /var/loki/rules /var/loki/wal && chown -R 10001:10001 /var/loki && chmod -R 755 /var/loki']
+      volumeMounts:
+        - name: storage
+          mountPath: /var/loki
+      securityContext:
+        runAsUser: 0
+        runAsNonRoot: false
 
 loki:
   auth_enabled: false

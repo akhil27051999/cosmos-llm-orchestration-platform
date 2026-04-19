@@ -16,6 +16,17 @@ server:
     runAsNonRoot: true
     runAsGroup: 65534
     fsGroup: 65534
+  # Init container to chown the storage directory (minikube hostpath workaround)
+  initContainers:
+    - name: fix-permissions
+      image: busybox
+      command: ['sh', '-c', 'chown -R 65534:65534 /data && chmod -R 755 /data']
+      volumeMounts:
+        - name: storage-volume
+          mountPath: /data
+      securityContext:
+        runAsUser: 0
+        runAsNonRoot: false
   service:
     type: ClusterIP
     servicePort: 9090
