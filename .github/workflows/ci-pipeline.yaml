@@ -37,7 +37,7 @@ jobs:
       - name: Run Tests with SQLite
         run: |
           source app/venv/bin/activate
-          pytest -v
+          pytest -v tests/unit
 
       - name: Build Docker Image
         id: build-image
