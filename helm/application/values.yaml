@@ -8,7 +8,7 @@ app:
   name: flask-api
   image:
     repository: akhilthyadi/flask-app
-    tag: a507bff
+    tag: d592f0d
     pullPolicy: IfNotPresent
   replicaCount: 3
   service:
