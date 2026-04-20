@@ -69,15 +69,15 @@ Cluster networking lives inside the **VPC** you already defined in `terraform/ma
                              │   ACM cert (443)   │
                              └────────┬───────────┘
                                       │
-┌─── VPC 10.0.0.0/16 ───────────────────────────────────────────────────────┐
-│                                                                            │
-│  PUBLIC  10.0.0.0/24 (az-a)     PUBLIC  10.0.10.0/24 (az-b)               │
-│  ┌─────────┐ ┌──────┐           ┌─────────┐ ┌──────┐                      │
-│  │  ALB    │ │ NAT  │           │  ALB    │ │ NAT  │                      │
-│  │ (443)   │ │  GW  │           │ (443)   │ │  GW  │                      │
-│  └────┬────┘ └──────┘           └────┬────┘ └──────┘                      │
-│       │                              │                                    │
-│       ▼                              ▼                                    │
+┌─── VPC 10.0.0.0/16 ──────────────────────────────────────────────────────┐
+│                                                                          │
+│  PUBLIC  10.0.0.0/24 (az-a)     PUBLIC  10.0.10.0/24 (az-b)              │
+│  ┌─────────┐ ┌──────┐           ┌─────────┐ ┌──────┐                     │
+│  │  ALB    │ │ NAT  │           │  ALB    │ │ NAT  │                     │
+│  │ (443)   │ │  GW  │           │ (443)   │ │  GW  │                     │
+│  └────┬────┘ └──────┘           └────┬────┘ └──────┘                     │
+│       │                              │                                   │
+│       ▼                              ▼                                   │
 │  APP  10.0.1.0/24 (az-a)       APP  10.0.11.0/24 (az-b)                  │
 │  ┌───────────────┐             ┌───────────────┐                         │
 │  │ EKS nodes     │             │ EKS nodes     │                         │
@@ -92,11 +92,11 @@ Cluster networking lives inside the **VPC** you already defined in `terraform/ma
 │                ▼                             ▼                           │
 │         Secrets Manager       S3         RDS Postgres (writer in az-a)   │
 │         (DB password)       (backups)    ┌──────────────────────────┐    │
-│         ECR (image pull)                 │  synchronous standby az-b │    │
+│         ECR (image pull)                 │  synchronous standby az-b│    │
 │                                          └──────────────────────────┘    │
-│                                                                            │
-│  DB  10.0.2.0/24 (az-a)    DB  10.0.12.0/24 (az-b) — RDS subnet group     │
-└────────────────────────────────────────────────────────────────────────────┘
+│                                                                          │
+│  DB  10.0.2.0/24 (az-a)    DB  10.0.12.0/24 (az-b) — RDS subnet group    │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 Everything below explains how to get there.
@@ -1545,37 +1545,37 @@ Here's the whole project on AWS, put together:
                        │                   │
                        ▼                   ▼
                   ┌───────────────────────────┐
-                  │    ALB (443, ACM cert)   │   in public subnets
+                  │    ALB (443, ACM cert)    │   in public subnets
                   └────────────┬──────────────┘
                                │ target-type: ip
-┌──────────── VPC 10.0.0.0/16 ─────────────────────────────────────────────────┐
-│                              │                                               │
+┌──────────── VPC 10.0.0.0/16 ────────────────────────────────────────────────┐
+│                              │                                              │
 │  PRIVATE APP SUBNETS (2 AZs, 10.0.1.0/24 + 10.0.11.0/24)                    │
 │  ┌─────────────────────────────────────────────────────────────────┐        │
 │  │ EKS worker nodes (managed node group + Karpenter)               │        │
-│  │                                                                  │        │
+│  │                                                                 │        │
 │  │  ┌─────────────────┐   ┌─────────────────┐  ┌────────────────┐  │        │
 │  │  │ flask-api pod   │   │ flask-api pod   │  │ flask-api pod  │  │        │
 │  │  │ (from ECR)      │   │                 │  │                │  │        │
 │  │  │ IRSA: reads     │   │                 │  │                │  │        │
 │  │  │ Secrets Manager │   │                 │  │                │  │        │
 │  │  └────┬────────────┘   └─────────────────┘  └────────────────┘  │        │
-│  │       │                                                          │        │
-│  │       │ pod IP → RDS SG                                          │        │
-│  └───────┼──────────────────────────────────────────────────────────┘        │
-│          │                                                                    │
-│          ▼                                                                    │
+│  │       │                                                         │        │
+│  │       │ pod IP → RDS SG                                         │        │
+│  └───────┼─────────────────────────────────────────────────────────┘        │
+│          │                                                                  │
+│          ▼                                                                  │
 │  DB SUBNETS (isolated, no 0.0.0.0/0 route, 10.0.2.0/24 + 10.0.12.0/24)      │
-│  ┌───────────────────────────────────────────────┐                           │
-│  │ RDS Postgres (Multi-AZ, encrypted via KMS)   │                           │
-│  │  writer(az-a) ←sync→ standby(az-b)           │                           │
-│  └───────────────────────────────────────────────┘                           │
-│                                                                               │
-│  DEPENDENT SERVICES SUBNETS (ESO pod, ArgoCD, etc.)                          │
-│  OBSERVABILITY SUBNETS (Prometheus/Grafana/Loki — or AMP/AMG off-cluster)    │
-│                                                                               │
-│  VPC ENDPOINTS: S3 (gateway), ECR api+dkr, Secrets Manager, STS, Logs        │
-└───────────────────────────────────────────────────────────────────────────────┘
+│  ┌───────────────────────────────────────────────┐                          │
+│  │ RDS Postgres (Multi-AZ, encrypted via KMS)    │                          │
+│  │  writer(az-a) ←sync→ standby(az-b)            │                          │
+│  └───────────────────────────────────────────────┘                          │
+│                                                                             │
+│  DEPENDENT SERVICES SUBNETS (ESO pod, ArgoCD, etc.)                         │
+│  OBSERVABILITY SUBNETS (Prometheus/Grafana/Loki — or AMP/AMG off-cluster)   │
+│                                                                             │
+│  VPC ENDPOINTS: S3 (gateway), ECR api+dkr, Secrets Manager, STS, Logs       │
+└─────────────────────────────────────────────────────────────────────────────┘
                               │
                               ▼ (outside VPC, reached via endpoints)
       ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌──────┐  ┌───────┐
