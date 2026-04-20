@@ -1,1218 +1,1680 @@
-# Module 8: AWS Cloud Services (Networking, IAM/Security, Databases, Storage, and the Rest)
+# Module 8: AWS — Deploying This Project to the Cloud
 
-> **Goal:** A deep-dive reference for the AWS services a 3–5 yr DevOps/SRE is expected to design, operate, and troubleshoot in interviews and on the job. Built as the **cloud-native counterpart** to the minikube/Vault/Helm/ArgoCD stack in Modules 1–7.
+> **Goal:** Know exactly which AWS services this project would use, **why** each one is needed, and **how** to wire them up — deeply enough to explain the architecture in an interview and actually build it when you want to.
+>
+> **Scope:** Only the services you'd actually touch to run this project on AWS. No encyclopedic surveys. Each section maps 1:1 to something you already built locally (minikube → EKS, Vault → Secrets Manager, DockerHub → ECR, and so on).
 
-> **Why this matters:** Every Kubernetes construct we deployed locally (Service, Ingress, Secret, PV, HPA, NetworkPolicy) has an AWS-native equivalent (ALB, Secrets Manager, EBS, ASG, Security Group). Interviewers routinely ask "how would you port this to AWS?" and expect you to name the right primitive, explain the tradeoffs, and debug it when it breaks.
+---
 
-> **Scope of this project:** The Terraform in `terraform/` targets AWS but was **not deployed** (cost avoidance). This doc is the conceptual + operational deep-dive that the Terraform reference architecture is built on.
+## How to Read This Doc
+
+Each service section follows the same structure so you can drill on it:
+
+1. **What it is** — plain explanation, no marketing.
+2. **Your project today uses X; on AWS you'd use this.** — the concrete swap.
+3. **Key concepts you must know** — the ~5 ideas an interviewer will probe.
+4. **How you'd implement it for this project** — actual Terraform / YAML you'd add.
+5. **Gotchas** — the traps that trip people up.
+6. **Interview Q&A** — questions you should be able to answer cold.
 
 ---
 
 ## Table of Contents
 
-1. [AWS Global Architecture](#aws-global-architecture)
-2. [Part A — Networking (Deep Dive)](#part-a--networking-deep-dive)
-3. [Part B — IAM & Security (Deep Dive)](#part-b--iam--security-deep-dive)
-4. [Part C — Databases](#part-c--databases)
-5. [Part D — Storage](#part-d--storage)
-6. [Part E — Compute](#part-e--compute)
-7. [Part F — Containers & Serverless](#part-f--containers--serverless)
-8. [Part G — Messaging & Integration](#part-g--messaging--integration)
-9. [Part H — Observability on AWS](#part-h--observability-on-aws)
-10. [Part I — Cost, Governance & Organizations](#part-i--cost-governance--organizations)
-11. [Cross-Cutting Troubleshooting Scenarios](#cross-cutting-troubleshooting-scenarios)
-12. [STAR Stories](#star-stories)
-13. [Production Hardening — Well-Architected Mapping](#production-hardening--well-architected-mapping)
-14. [Mapping This Project to AWS](#mapping-this-project-to-aws)
+1. [Overview — Your Project on AWS in One Picture](#overview--your-project-on-aws-in-one-picture)
+2. [Service 1: VPC + Networking](#service-1-vpc--networking) — the base layer (you already have this)
+3. [Service 2: EKS](#service-2-eks) — replaces minikube
+4. [Service 3: ECR](#service-3-ecr) — replaces DockerHub
+5. [Service 4: RDS for PostgreSQL](#service-4-rds-for-postgresql) — replaces in-cluster Postgres
+6. [Service 5: IAM + IRSA](#service-5-iam--irsa) — how pods get AWS permissions
+7. [Service 6: Secrets Manager](#service-6-secrets-manager) — replaces Vault (optional)
+8. [Service 7: ALB + Route 53 + ACM](#service-7-alb--route-53--acm) — public entry point
+9. [Service 8: S3](#service-8-s3) — Terraform state + backups
+10. [Service 9: CloudWatch + AMP/AMG](#service-9-cloudwatch--ampamg) — observability on AWS
+11. [Service 10: KMS](#service-10-kms) — the encryption thread
+12. [End-to-End Architecture](#end-to-end-architecture)
+13. [90-Day Implementation Roadmap](#90-day-implementation-roadmap)
+14. [Cost Estimate](#cost-estimate)
 
 ---
 
-## AWS Global Architecture
+## Overview — Your Project on AWS in One Picture
 
-```
-┌─────────────────────── AWS Global Infrastructure ───────────────────────┐
-│                                                                         │
-│  Region (us-east-1)                  Region (eu-west-1)                 │
-│  ┌───────────────────────┐           ┌───────────────────────┐          │
-│  │  AZ a   AZ b   AZ c   │           │  AZ a   AZ b   AZ c   │          │
-│  │  ┌──┐  ┌──┐  ┌──┐     │           │  ┌──┐  ┌──┐  ┌──┐     │          │
-│  │  │DC│  │DC│  │DC│     │           │  │DC│  │DC│  │DC│     │          │
-│  │  └──┘  └──┘  └──┘     │           │  └──┘  └──┘  └──┘     │          │
-│  └───────────────────────┘           └───────────────────────┘          │
-│           │                                       │                     │
-│           └───── AWS Global Backbone ─────────────┘                     │
-│                                                                         │
-│  Edge Locations (400+): CloudFront, Route 53, Global Accelerator,       │
-│                         Lambda@Edge, AWS Shield                         │
-│                                                                         │
-│  Local Zones / Wavelength / Outposts: AWS services closer to users      │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+Your minikube stack maps to AWS like this:
 
-**Key vocabulary:**
-
-| Term | Meaning |
-|------|---------|
-| **Region** | A geographic area (us-east-1, eu-west-1). Isolated from other regions. Pick based on latency, compliance, and service availability. |
-| **Availability Zone (AZ)** | One or more discrete datacenters inside a region. Each AZ has redundant power, networking, cooling. AZs in a region are connected by low-latency links (<2 ms). |
-| **Edge Location** | PoPs (400+ worldwide) used by CloudFront, Route 53, Shield for caching and DDoS protection. |
-| **Local Zone / Wavelength** | Extensions of a region to metro areas / 5G networks for ultra-low-latency. |
-| **Outposts** | AWS hardware in your datacenter. Same APIs. Hybrid workloads. |
-
-**The universal HA rule:** Deploy across **≥2 AZs**. One AZ failure should never take the application down. Multi-region is for disaster recovery and regulated latency, not routine HA.
-
----
-
-## Part A — Networking (Deep Dive)
-
-This section covers VPC, subnets, routing, internet/NAT gateways, VPC endpoints, Security Groups vs NACLs, load balancers, Route 53, CloudFront, VPC peering, Transit Gateway, PrivateLink, Direct Connect, and VPN.
-
-### A.1 VPC (Virtual Private Cloud)
-
-**What it is:** A logically isolated virtual network you define inside a region. CIDR block, subnets, route tables, gateways — all yours.
-
-```
-VPC: 10.0.0.0/16  (65 536 IPs)
-│
-├── AZ us-east-1a
-│   ├── Public  subnet   10.0.1.0/24   → IGW           (ALB, NAT, Bastion)
-│   ├── App    subnet    10.0.11.0/24  → NAT GW        (EC2, EKS workers)
-│   ├── DB     subnet    10.0.21.0/24  → (no egress)   (RDS)
-│
-├── AZ us-east-1b
-│   ├── Public subnet    10.0.2.0/24   → IGW
-│   ├── App    subnet    10.0.12.0/24  → NAT GW
-│   └── DB     subnet    10.0.22.0/24  → (no egress)
-```
-
-**Design rules:**
-
-| Rule | Why |
-|------|-----|
-| CIDR `/16` for VPC, `/24` for subnets | `/24` = 256 IPs (AWS reserves 5), enough for most tiers. `/16` leaves room. |
-| Never overlap CIDRs across VPCs you may peer | Peering, TGW, Direct Connect all refuse overlapping ranges. |
-| Use private IPs only (RFC 1918) | 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16. |
-| Tier subnets by trust level (public/app/db) | Different route tables, different SGs, least-privilege blast radius. |
-| ≥2 AZs per tier | Loss of one AZ still serves traffic. |
-
-**Reserved IPs per subnet:** AWS reserves 5 — `.0` network, `.1` router, `.2` DNS, `.3` future, `.255` broadcast (even on IPv4 unicast). So a `/24` has 251 usable IPs, not 256.
-
-### A.2 Route Tables & Internet Egress
-
-Every subnet is **associated** with one route table. Routes say "for destination X, send to target Y."
-
-**Public subnet route table:**
-```
-10.0.0.0/16   → local          (intra-VPC, implicit, immutable)
-0.0.0.0/0     → igw-abc123     (everything else → Internet Gateway)
-```
-
-**Private subnet route table:**
-```
-10.0.0.0/16   → local
-0.0.0.0/0     → nat-xyz789     (egress via NAT GW in public subnet)
-```
-
-**DB subnet route table:**
-```
-10.0.0.0/16   → local          (no 0.0.0.0/0 — no internet at all)
-```
-
-### A.3 Internet Gateway (IGW) vs NAT Gateway
-
-| Aspect | **IGW** | **NAT Gateway** |
-|--------|---------|-----------------|
-| Role | Bidirectional internet (public subnet) | Egress-only from private subnet |
-| IP needed | Resource must have public IP or EIP | NAT has an EIP; private hosts reuse it |
-| Scope | 1 per VPC | 1 per AZ (for HA) |
-| HA | Built-in AWS-managed | Zonal; deploy in each AZ |
-| Cost | Free | **~$0.045/hr + ~$0.045/GB processed** — often the surprise AWS bill item |
-
-**Alternative for cost:** **NAT Instance** (EC2 running iptables). Cheaper at low volumes, no HA out of the box, less bandwidth. Modern best-practice: NAT GW.
-
-### A.4 Security Groups vs Network ACLs
-
-| | **Security Group (SG)** | **Network ACL (NACL)** |
+| What you have locally | AWS service | Why swap |
 |---|---|---|
-| Scope | ENI (attached to instance/LB/RDS) | Subnet-wide |
-| Stateful? | **Yes** — return traffic auto-allowed | **No** — must allow both inbound and outbound explicitly |
-| Rules | Allow only (no deny) | Allow + Deny |
-| Default | Deny all inbound, allow all outbound | Default NACL: allow all both directions |
-| Evaluation | All rules evaluated together | Numbered; lowest first that matches wins |
-| Reference | Another SG ID (great for tiers) | Only CIDR ranges |
-| Change takes effect | Immediately | Immediately |
+| Minikube 3-node cluster | **EKS** | Managed control plane, real multi-AZ |
+| DockerHub | **ECR** | Same VPC as cluster (fast pulls), IAM-auth, scanning |
+| Postgres Deployment in K8s | **RDS for PostgreSQL** | Managed backups, Multi-AZ failover, no statefulset pain |
+| Vault + ESO | **AWS Secrets Manager + ESO** | Rotation, IAM-integrated, one less thing to run |
+| Minikube nginx Ingress | **ALB via AWS Load Balancer Controller** | Managed, public, WAF-ready |
+| `/etc/hosts` / minikube tunnel | **Route 53** (DNS) + **ACM** (TLS) | Real domain + auto-renewing certs |
+| Local tfstate | **S3 + DynamoDB lock** | Team-safe, versioned, recoverable |
+| Prometheus/Grafana/Loki | Keep **OSS on EKS**, or use **AMP + AMG** | Less ops if you pick managed |
+| K8s Secrets | **KMS-encrypted** | Compliance + audit |
 
-**Tier pattern:**
+Cluster networking lives inside the **VPC** you already defined in `terraform/main.tf` — that part doesn't change, it's the foundation for everything above.
+
+**Diagram of the target:**
+
 ```
-ALB-SG:   inbound 443 from 0.0.0.0/0 (public)
-App-SG:   inbound 5000 from ALB-SG
-DB-SG:    inbound 5432 from App-SG
+                             ┌──────────────────┐
+                             │   Route 53       │  user hits api.example.com
+                             │ api.example.com  │
+                             └────────┬─────────┘
+                                      │
+                                      ▼
+                             ┌────────────────────┐
+                             │   ACM cert (443)   │
+                             └────────┬───────────┘
+                                      │
+┌─── VPC 10.0.0.0/16 ───────────────────────────────────────────────────────┐
+│                                                                            │
+│  PUBLIC  10.0.0.0/24 (az-a)     PUBLIC  10.0.10.0/24 (az-b)               │
+│  ┌─────────┐ ┌──────┐           ┌─────────┐ ┌──────┐                      │
+│  │  ALB    │ │ NAT  │           │  ALB    │ │ NAT  │                      │
+│  │ (443)   │ │  GW  │           │ (443)   │ │  GW  │                      │
+│  └────┬────┘ └──────┘           └────┬────┘ └──────┘                      │
+│       │                              │                                    │
+│       ▼                              ▼                                    │
+│  APP  10.0.1.0/24 (az-a)       APP  10.0.11.0/24 (az-b)                  │
+│  ┌───────────────┐             ┌───────────────┐                         │
+│  │ EKS nodes     │             │ EKS nodes     │                         │
+│  │ (Karpenter)   │             │ (Karpenter)   │                         │
+│  │   ┌─────┐     │             │   ┌─────┐     │                         │
+│  │   │pod  │───┐ │             │   │pod  │───┐ │                         │
+│  │   └─────┘   │ │             │   └─────┘   │ │                         │
+│  │             │ │             │             │ │                         │
+│  └─────────────┼─┘             └─────────────┼─┘                         │
+│                │                             │                           │
+│          IRSA-scoped calls                   │                           │
+│                ▼                             ▼                           │
+│         Secrets Manager       S3         RDS Postgres (writer in az-a)   │
+│         (DB password)       (backups)    ┌──────────────────────────┐    │
+│         ECR (image pull)                 │  synchronous standby az-b │    │
+│                                          └──────────────────────────┘    │
+│                                                                            │
+│  DB  10.0.2.0/24 (az-a)    DB  10.0.12.0/24 (az-b) — RDS subnet group     │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
-Referencing SG-by-SG (not CIDR) means scaling out instances changes nothing — the new ENI is in App-SG automatically.
 
-**When to use NACL:** Broad deny rules at the subnet boundary (e.g., block a known-bad IP), defense in depth. Everyday traffic control → SGs.
-
-### A.5 VPC Endpoints
-
-**Why:** Traffic from a private subnet to AWS services (S3, DynamoDB, KMS, SQS, etc.) would otherwise go out the NAT GW → public internet → back to AWS. Expensive and avoidable.
-
-| Endpoint type | Services | How it works |
-|---------------|----------|--------------|
-| **Gateway Endpoint** | S3, DynamoDB only | Adds a route-table entry. **Free.** |
-| **Interface Endpoint** (PrivateLink) | ~100 services (KMS, SQS, SNS, ECR, EKS, etc.) | Creates ENIs with private DNS. **~$0.01/hr per AZ + $0.01/GB.** |
-
-**Test:** `dig s3.us-east-1.amazonaws.com` from an EC2. Without endpoint → public IP. With gateway endpoint + proper route → still DNS public, but traffic stays on AWS backbone.
-
-### A.6 Elastic Load Balancers
-
-| Type | OSI | Use case | Health checks | Notable features |
-|------|-----|----------|--------------|------------------|
-| **ALB** | L7 (HTTP/HTTPS) | Web apps, microservices | HTTP path/code | Path/host/header routing, WAF integration, gRPC, HTTP/2, TLS termination, auth via OIDC/Cognito |
-| **NLB** | L4 (TCP/UDP/TLS) | Ultra-low latency, millions of conn/s, static IP | TCP/HTTP | Preserves client IP, Elastic IP per AZ, PrivateLink provider |
-| **GWLB** | L3 (IP) | Insertion of 3rd-party firewalls/IDS/IPS | GENEVE | Transparent traffic steering |
-| **CLB** (legacy) | L4/L7 | Don't use in new designs | | Replaced by ALB/NLB |
-
-**ALB deep dive:**
-- **Listener** → one or more **Rules** → **Target Groups** (EC2/IP/Lambda targets)
-- Rules can match path (`/api/*`), host (`api.example.com`), header, query, HTTP method
-- **Stickiness:** cookie-based session affinity (app-generated or ALB-generated `AWSALB`)
-- **Slow start:** gradually ramps traffic to newly healthy targets
-- **Connection draining / Deregistration delay:** 300s default — wait for in-flight requests before removing a target
-
-### A.7 Route 53 (DNS)
-
-| Record type | Use |
-|------|-----|
-| A / AAAA | IPv4 / IPv6 |
-| CNAME | Alias to another DNS name (but **not apex** — `example.com`) |
-| **Alias** (AWS-specific) | Apex → ALB/CloudFront/S3 website/API Gateway. Free. Works at zone apex, unlike CNAME. |
-| MX, TXT, NS, SRV | Standard |
-
-**Routing policies:**
-| Policy | Logic |
-|--------|-------|
-| **Simple** | One answer |
-| **Weighted** | Split traffic by percentage (canary) |
-| **Latency** | Send to region with lowest RTT |
-| **Failover** | Primary/Secondary with health check |
-| **Geolocation** | By country/continent (compliance) |
-| **Geoproximity** | By geographic distance + bias (Traffic Flow feature) |
-| **Multi-value** | Up to 8 healthy answers returned (basic LB) |
-
-**Health checks:** Can monitor endpoints, other health checks, or CloudWatch alarms. Route 53 will only return healthy answers.
-
-### A.8 CloudFront (CDN)
-
-- **Global PoPs** cache static + dynamic content.
-- Origins: S3, ALB, MediaStore, any HTTP endpoint.
-- **Signed URLs / Signed Cookies** for private content.
-- **Origin Access Control (OAC)** (replaces OAI) restricts S3 origin to CloudFront only.
-- **Lambda@Edge / CloudFront Functions** for request/response manipulation.
-- **Price classes** control which continents' PoPs you pay for.
-
-**TTL hierarchy:** Cache-Control header on origin > CloudFront behavior TTL > default.
-
-### A.9 Connecting VPCs & On-Prem
-
-| Connection | Use | Notes |
-|------------|-----|-------|
-| **VPC Peering** | 1:1 VPC connectivity | Non-transitive; each pair needs its own peering + routes; no overlapping CIDRs |
-| **Transit Gateway (TGW)** | Hub-spoke for many VPCs and on-prem | Transitive; regional; supports route tables per attachment; preferred at scale (>3-4 VPCs) |
-| **PrivateLink (Interface Endpoint + NLB)** | Expose a service VPC→VPC without peering | Consumer-side ENIs; no route table changes |
-| **Direct Connect (DX)** | Dedicated fiber to AWS | 1/10/100 Gbps; consistent latency; DX Gateway for multi-region |
-| **Site-to-Site VPN** | IPsec over internet | Cheaper, higher latency, two tunnels per connection for HA |
-| **Client VPN** | End-user OpenVPN-based access | MFA via AD/SAML |
-| **CloudWAN** | Managed global WAN on top of TGW | Newer; policy-driven routing |
-
-**Transitive routing gotcha:** VPC peering is **not** transitive. If A↔B and B↔C, A cannot reach C via B. Use TGW for that.
-
-### A.10 Networking Troubleshooting Scenarios
-
-1. **Pod/EC2 can't reach the internet** → check (a) subnet's route table has `0.0.0.0/0 → nat-*` or `→ igw-*`; (b) SG outbound allows 443; (c) NACL allows both directions; (d) public subnet's NAT has EIP.
-2. **ALB target unhealthy** → health check endpoint returns 200? SG on target allows traffic from ALB-SG on the target port? Target in a subnet the ALB's subnets can reach (shared VPC)?
-3. **Can't reach RDS from EC2** → RDS subnet group covers at least 2 AZs? RDS SG's inbound allows the EC2-SG on 5432? Correct cluster endpoint (writer vs reader)?
-4. **NAT GW surprise bill** → probably a chatty process pulling from S3/ECR. Add S3 Gateway Endpoint + ECR Interface Endpoint; re-check CloudWatch `BytesOutToDestination`.
-5. **CloudFront returning 502 from ALB origin** → origin SSL cert mismatch? ALB's listener 443 using valid ACM cert matching the CloudFront origin domain? Origin protocol set correctly (HTTP vs HTTPS vs match-viewer)?
-6. **DNS resolves to private IP but connection times out** → you're outside the VPC or VPN. Private-hosted zone only resolves from inside the VPC (or via Route 53 Resolver endpoints).
-7. **Packet drops mid-flow, not on new connections** → likely SG changed but only affects new connections because SGs are stateful. Check Flow Logs with `ACTION=REJECT`.
-8. **Cross-account VPC endpoint fails** → the service endpoint's policy excludes your principal, or your SG blocks the ENI.
-
-### A.11 Networking Interview Q&A
-
-1. **What's the difference between a public and private subnet?**
-   > Whether its route table has a `0.0.0.0/0 → IGW` route. Nothing else; there's no "public/private" flag.
-
-2. **SG vs NACL — which is stateful, which evaluates in order?**
-   > SG = stateful, all rules evaluated together. NACL = stateless, numbered rules, lowest matching number wins.
-
-3. **Why is NAT GW per-AZ for HA?**
-   > It's a zonal resource. If AZ-a goes down, a NAT GW only in AZ-a breaks all private-subnet egress in the VPC. Deploy one per AZ and route each subnet to its own-AZ NAT.
-
-4. **Alias vs CNAME?**
-   > CNAME can't be set on a zone apex (`example.com`). Alias is an AWS extension to A/AAAA that points at AWS resources (ALB, CloudFront, S3) and is free. Use Alias wherever you can.
-
-5. **How does an ALB route to a target?**
-   > Listener → rule match (path/host/header/method/query) → forward action → target group. Target group has targets + health checks + stickiness + deregistration delay.
-
-6. **Explain the 5 reserved IPs in a subnet.**
-   > `.0` = network, `.1` = VPC router, `.2` = DNS (Route 53 Resolver), `.3` = future/AWS, `.255` = broadcast (not actually usable, reserved anyway). So `/24` has 251 usable.
-
-7. **Why would you use PrivateLink over VPC peering?**
-   > To expose a single service — not the whole VPC — to a consumer VPC. No CIDR overlap concerns, one-way, fine-grained.
-
-8. **What does Transit Gateway solve that peering doesn't?**
-   > Transitive routing and centralized policy across many VPCs and on-prem. Peering is a full mesh (N² connections); TGW is hub-and-spoke.
-
-9. **How do VPC Flow Logs help debug connectivity?**
-   > They record `srcaddr, dstaddr, srcport, dstport, protocol, packets, bytes, ACTION (ACCEPT/REJECT)` per flow. If you see `REJECT` at the SG or subnet, the SG/NACL is blocking.
-
-10. **What's the difference between Gateway Endpoint and Interface Endpoint?**
-    > Gateway = route-table target for S3/DDB only, free. Interface = ENI in your subnet (PrivateLink) for ~100 services, paid by hour + GB.
-
-11. **How does ALB preserve the client IP? And NLB?**
-    > ALB does **not** — it terminates TCP. Client IP is in `X-Forwarded-For`. NLB **does** preserve client IP (TCP passthrough). Configure target-group `preserve_client_ip` if you want source IP on NLB → IP targets.
-
-12. **What are the HTTP routing capabilities of ALB?**
-    > Path, host, HTTP header, HTTP method, query string, source IP. Combined via AND/OR up to rule conditions limit.
-
-13. **Explain ALB vs NLB for a gRPC service.**
-    > ALB supports gRPC (HTTP/2) with routing + health checks. NLB handles L4 only — works, but no request-level features. Pick ALB unless you need NLB's static IP/low latency.
-
-14. **What's a VPC Endpoint policy for?**
-    > Restricts what API calls can traverse the endpoint. Example: S3 gateway endpoint policy allowing only your company's buckets.
-
-15. **Draw the packet flow from a browser to an EKS pod behind an ALB.**
-    > Browser → Route 53 → CloudFront (optional) → public IP of ALB (in public subnet) → target group IP target = pod IP (or Node + NodePort for instance mode) → kube-proxy / IP forwarding → pod veth → pod.
-
-16. **What's a bastion host, and is it still needed?**
-    > Jump host with public IP to SSH/RDP into private instances. Replaced in most orgs by **SSM Session Manager** (no open SSH, no public IP, IAM-authenticated, fully audited).
-
-17. **Explain IPv6 in VPC.**
-    > Dual-stack. VPC gets a `/56`, subnets `/64`. IGW/NAT for IPv4 still needed; for IPv6 you use **Egress-Only Internet Gateway** for outbound-only IPv6.
-
-18. **What happens to existing connections when you change a Security Group rule?**
-    > Because SGs are stateful, **existing flows keep working** until they time out. Only new flows are subject to the new rule. This is a classic trap when "revoking" access.
-
-19. **How do you implement blue/green at the DNS layer?**
-    > Two ALBs or target groups. Route 53 weighted records shift 0% → 100%. Health checks remove the bad color automatically.
-
-20. **A VPN tunnel shows "UP" but traffic doesn't flow. Where do you look?**
-    > (a) Propagation — is VGW propagating routes into the route table? (b) The **customer side** — does their route table point your CIDR at the VPN concentrator? (c) SG/NACL on the private subnet. (d) Asymmetric routing between two tunnels.
+Everything below explains how to get there.
 
 ---
 
-## Part B — IAM & Security (Deep Dive)
+## Service 1: VPC + Networking
 
-### B.1 IAM Core Concepts
+### What it is
 
-**Principals:**
+A **VPC** is a logically isolated virtual network in AWS — your own IP range, your own routing tables, your own firewalls. Everything else (EKS, RDS, ALB) lives inside subnets of this VPC.
 
-| Principal | Use |
-|-----------|-----|
-| **Root user** | Account owner. **Never use after setup.** Enable MFA, lock away. |
-| **IAM User** | Long-lived identity for a human or legacy workload. Prefer SSO/roles. |
-| **IAM Group** | Permissions bundle you attach users to. |
-| **IAM Role** | Assumable identity with temporary STS credentials — for services, cross-account access, federation. **Preferred pattern.** |
-| **Federated Identity** | User in an IdP (Okta, AD, Google) who assumes a role via SAML/OIDC. |
+### Your project today uses this; on AWS you'd use this
 
-**Policies:**
+You already have `terraform/main.tf` that defines:
 
-| Policy type | Attached to | Purpose |
-|-------------|------------|---------|
-| **Identity-based** | User, group, role | "What can this principal do?" |
-| **Resource-based** | S3 bucket, KMS key, SQS, Lambda, etc. | "Who can act on this resource?" |
-| **Permissions boundary** | User or role | Max permissions (cap) — even if identity policy allows more |
-| **Service Control Policy (SCP)** | Org / OU | Org-wide guardrail at the account level |
-| **Session policy** | Passed at `sts:AssumeRole` time | Further restricts the session |
-| **ACL** (legacy) | S3/VPC | Old style; prefer policies |
+- VPC `10.0.0.0/16`
+- 5-tier subnets per AZ: **public / app / db / dependent / observability**
+- 2 AZs (`us-east-1a`, `us-east-1b`)
+- Internet Gateway + NAT Gateway per AZ
+- 6 Security Groups (alb / app / db / dependent / observability / api_server)
 
-### B.2 Policy Document Anatomy
+You **don't need to add anything** — this is the foundation. What changes is what sits **in** the subnets.
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "AllowListMyBuckets",
-      "Effect": "Allow",
-      "Action": ["s3:ListBucket"],
-      "Resource": "arn:aws:s3:::my-bucket",
-      "Condition": {
-        "IpAddress": {"aws:SourceIp": ["203.0.113.0/24"]},
-        "Bool":      {"aws:SecureTransport": "true"}
-      }
-    }
+### Key concepts you must know
+
+**1. Subnet = AZ + CIDR + route table association.**
+A subnet is "private" or "public" only because of its route table:
+- Public → has `0.0.0.0/0 → IGW` route. Resources can have public IPs.
+- Private → has `0.0.0.0/0 → NAT GW` route. Outbound only.
+- Isolated (your `db` subnet) → no `0.0.0.0/0` route at all.
+
+**2. Security Group vs NACL.**
+
+| | **Security Group** | **NACL** |
+|---|---|---|
+| Attached to | An ENI (instance, pod, RDS, ALB) | A whole subnet |
+| Stateful? | **Yes** — return traffic auto-allowed | No — rules for both directions |
+| Rules | Allow only | Allow + Deny |
+| Reference other? | **Other SG IDs** (big deal) | CIDR only |
+
+SG tier pattern (which you already implement):
+```
+alb_sg  : inbound 443 from 0.0.0.0/0
+app_sg  : inbound 8080 from alb_sg     ← references SG, not IP
+db_sg   : inbound 5432 from app_sg
+```
+This means scaling out app instances Just Works — new ENI is in `app_sg`, DB trusts it automatically.
+
+**3. NAT Gateway is per-AZ for high availability.**
+Your Terraform does this right (`for_each = var.azs` on `aws_nat_gateway.main`). If AZ-a dies, subnets in AZ-b still egress through their own NAT. Don't put all subnets behind one NAT in one AZ — that's a single point of failure **and** inter-AZ traffic costs.
+
+**4. VPC Endpoints.**
+Traffic from a private subnet to S3/ECR/KMS would otherwise go out NAT → internet → back to AWS. Expensive and slow. **Add these endpoints:**
+
+| Endpoint | Type | What it fixes |
+|----------|------|---------------|
+| S3 | Gateway (free) | Image layer pulls, backups, CI artifacts |
+| DynamoDB | Gateway (free) | — (not used by this project) |
+| ECR API + ECR DKR | Interface (paid) | Docker image pulls by nodes |
+| Secrets Manager | Interface (paid) | ESO / app fetching secrets |
+| STS | Interface (paid) | IRSA token exchange |
+| Logs (CloudWatch) | Interface (paid) | Log shipping |
+
+Without endpoints, each pod pulling an image round-trips the public internet → NAT charges. With S3 gateway + ECR endpoints, image pulls stay on AWS backbone.
+
+**5. CIDR sizing.**
+Your `/24` (256 IPs, 251 usable) is fine for ~200 pods per AZ. With VPC CNI (default on EKS), **every pod gets a VPC IP** — so small subnets run out of IPs during scale-up. Plan `/20` or `/19` for app subnets if you expect >1000 pods.
+
+### How you'd implement it for this project
+
+You're mostly done. To finish the production version, add VPC endpoints to `terraform/main.tf`:
+
+```hcl
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [
+    aws_route_table.private.id,
+    aws_route_table.private_db.id,
   ]
+}
+
+resource "aws_vpc_endpoint" "ecr_api" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.ecr.api"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [for s in aws_subnet.app_private : s.id]
+  security_group_ids  = [aws_security_group.app_sg.id]
+  private_dns_enabled = true
+}
+# repeat for ecr.dkr, secretsmanager, sts, logs
+```
+
+Enable **VPC Flow Logs** to S3 so you can debug connectivity (SG/NACL rejections appear as `ACTION=REJECT`):
+
+```hcl
+resource "aws_flow_log" "vpc" {
+  log_destination      = aws_s3_bucket.flow_logs.arn
+  log_destination_type = "s3"
+  traffic_type         = "ALL"
+  vpc_id               = aws_vpc.main.id
 }
 ```
 
-Key elements: `Effect` (Allow/Deny), `Action` (API action), `Resource` (ARN), `Principal` (only in resource-based), `Condition` (MFA, IP, VPC, tag, time).
+### Gotchas
 
-### B.3 Policy Evaluation Logic
+- **`for_each` vs `count` for subnets.** You're using `for_each` over a map — good. If you remove `us-east-1a` from the map later, only those subnets are destroyed. With `count`, removing index 0 would destroy + recreate ALL subsequent subnets because indices shift.
+- **5 reserved IPs per subnet** (`.0` network, `.1` VPC router, `.2` DNS, `.3` future, `.255` broadcast). `/24` = 251 usable, not 256.
+- **Changing CIDRs is hard.** You can add a secondary CIDR block, but changing the primary requires recreating the VPC. Size up generously on day 1.
+- **Default SG accepts all traffic within itself.** Don't use the default SG for anything — create tier-specific SGs like you already did.
+- **No transitive peering.** If VPC A peers VPC B and VPC B peers VPC C, A cannot reach C. Use Transit Gateway for hub-and-spoke.
 
-For any API call, AWS evaluates across all applicable policies:
+### Interview Q&A
+
+1. **Public vs private subnet — what's the actual difference?**
+   > Whether the route table has `0.0.0.0/0 → IGW`. Nothing else. There's no "public" flag on a subnet.
+
+2. **Why is NAT Gateway per-AZ?**
+   > It's a zonal resource. If the only NAT is in us-east-1a and that AZ fails, all private subnets lose egress. One NAT per AZ, each route table points to its own-AZ NAT.
+
+3. **Your DB subnet has no internet route. How does Postgres get OS patches?**
+   > RDS is managed — AWS patches it via the service's own network, not yours. For self-managed DBs on EC2 you'd need NAT; for RDS you don't.
+
+4. **SG vs NACL — when each?**
+   > SGs for 99% of daily traffic control (stateful, SG-referencing). NACLs for subnet-wide deny rules (block a specific IP range, defense in depth). Never try to do per-instance control with NACLs.
+
+5. **You see a $2k NAT bill. How do you debug?**
+   > CloudWatch metrics on the NAT GW → `BytesOutToDestination`. Enable VPC Flow Logs → query in Athena for top talkers. Usually S3 or ECR pulls. Fix: VPC endpoints.
+
+---
+
+## Service 2: EKS
+
+### What it is
+
+**Elastic Kubernetes Service** — AWS runs the Kubernetes **control plane** (API server, etcd, scheduler, controller-manager). You run the **worker nodes** (EC2 instances or Fargate tasks) that host your pods.
+
+### Your project today uses minikube; on AWS you'd use EKS
+
+Minikube runs a single-node (or multi-node, in your case) cluster on your Mac using Docker as the hypervisor. EKS gives you the same Kubernetes API you already use, but:
+
+- Control plane is HA across 3 AZs, managed by AWS.
+- Workers are EC2 instances in your VPC subnets.
+- Pod IPs come from the VPC CIDR directly (VPC CNI plugin) — no overlay network.
+- Your **Helm charts and ArgoCD setup work as-is**.
+
+### Key concepts you must know
+
+**1. Control plane vs data plane.**
+- Control plane: AWS-managed, you only pay `$0.10/hr` per cluster (~$73/mo).
+- Data plane: your EC2 nodes (or Fargate). You pick the instance types + quantity.
+
+**2. Node groups — three ways to run workers:**
+
+| Option | How | Use |
+|--------|-----|-----|
+| **Managed node groups** | AWS-managed ASG of EC2 | Default choice; easy upgrades |
+| **Self-managed nodes** | You build AMI + ASG yourself | Max customization; rarely needed |
+| **Fargate profiles** | AWS runs each pod in its own tiny VM | No nodes to manage; no DaemonSets; slower starts |
+| **Karpenter** | Open-source node autoscaler that provisions EC2 directly | **Best-in-class** — picks optimal instance type per pod, spins up in seconds |
+
+**Recommendation for your project:** 1 managed node group (2× `t3.medium` baseline) + **Karpenter** for everything else. Karpenter replaces Cluster Autoscaler and is faster + cheaper (it right-sizes instance picks).
+
+**3. VPC CNI — the networking model.**
+Each pod gets a **VPC IP** (secondary IP on a node's ENI). No overlay. This means:
+- Pod IPs are routable from anywhere in the VPC.
+- SGs can target pods directly (via `aws-vpc-cni` + security groups for pods feature).
+- **ENI limits per instance type** cap pod density. `t3.medium` → ~17 pods. Enable **prefix delegation** (`WARM_PREFIX_TARGET=1`) to scale to ~110 pods on the same instance.
+
+**4. Cluster auth — aws-auth ConfigMap (legacy) + Access Entries (new).**
+To give humans or roles `kubectl` access, map their IAM ARN to a K8s group. Newer method: **EKS Access Entries** (2024+), replaces `aws-auth` ConfigMap fumbling.
+
+**5. Add-ons you'll install (AWS Load Balancer Controller, EBS CSI, etc.)** — EKS lets you install these as "EKS Add-ons" (versioned, managed upgrades) instead of raw Helm charts. Prefer add-ons when available.
+
+### How you'd implement it for this project
+
+**Minimum EKS setup in Terraform** (uses the official `terraform-aws-modules/eks` module — writing raw resources is painful):
+
+```hcl
+module "eks" {
+  source  = "terraform-aws-modules/eks/aws"
+  version = "~> 20.0"
+
+  cluster_name    = "${var.project_name}-eks"
+  cluster_version = "1.31"
+
+  vpc_id     = aws_vpc.main.id
+  subnet_ids = [for s in aws_subnet.app_private : s.id]
+
+  enable_irsa                              = true   # we'll use this for ESO, ALB controller, etc.
+  cluster_endpoint_public_access           = true
+  cluster_endpoint_public_access_cidrs     = ["YOUR_OFFICE_IP/32"]
+
+  # One small managed node group for system workloads
+  eks_managed_node_groups = {
+    system = {
+      min_size     = 2
+      max_size     = 4
+      desired_size = 2
+      instance_types = ["t3.medium"]
+      labels = { "workload-type" = "system" }
+    }
+  }
+
+  cluster_addons = {
+    vpc-cni                = { most_recent = true }
+    coredns                = { most_recent = true }
+    kube-proxy             = { most_recent = true }
+    aws-ebs-csi-driver     = { most_recent = true }
+  }
+}
+```
+
+Then install Karpenter for everything else, and your existing Helm charts (`helm/application`, `helm/database`, `helm/vault`, `helm/prometheus`, ...) all apply unchanged.
+
+**Node labels** to preserve your minikube pattern (`type=application/database/dependent_services/observability`):
+
+```hcl
+eks_managed_node_groups = {
+  application = {
+    labels = { type = "application" }
+    taints = [{ key = "type", value = "application", effect = "NO_SCHEDULE" }]
+  }
+  database = {
+    labels = { type = "database" }
+    taints = [{ key = "type", value = "database", effect = "NO_SCHEDULE" }]
+  }
+  # ...
+}
+```
+
+Your Helm charts' `nodeSelector: { type: application }` keeps working.
+
+**Ingress via ALB Controller** (see Service 7) — your existing Ingress manifests just need an annotation added.
+
+### Gotchas
+
+- **"Insufficient pods" on a node** — you hit the ENI IP limit. Enable VPC CNI prefix delegation. `WARM_PREFIX_TARGET=1` and `ENABLE_PREFIX_DELEGATION=true`.
+- **VPC CNI uses node's SG by default.** To give pods their own SGs, enable the "security groups for pods" feature (needs specific instance types).
+- **K8s version upgrades** — EKS supports N and N-1 (and N-2 for extended support, paid). Plan upgrades quarterly.
+- **EBS PVCs are zonal.** A pod using an EBS PVC in us-east-1a cannot reschedule to a node in us-east-1b. Use `volumeBindingMode: WaitForFirstConsumer` in the StorageClass so PVC provisions in the same AZ the pod lands on.
+- **Loadbalancer-per-Service explosion.** If each `Service: LoadBalancer` creates its own NLB, costs balloon. Use ALB Controller with `ingress.class: alb` and group ingresses by host — one ALB for many apps.
+- **Pods lose pod-to-pod connectivity** when VPC CNI's warm-IP pool runs out during scale-up. Pre-provision with `WARM_IP_TARGET` or use prefix delegation.
+
+### Interview Q&A
+
+1. **EKS vs self-managed K8s on EC2 — tradeoffs?**
+   > EKS: AWS runs control plane (HA, patches, etcd backups). You manage data plane. Self-managed: full control, more work. 99% of teams pick EKS because control plane management is the least interesting part of Kubernetes.
+
+2. **How does a pod get a VPC IP?**
+   > The VPC CNI daemon on each node grabs secondary IPs on the node's ENI from the subnet's IP pool. Pods get one of those IPs. Pod packets route natively within the VPC — no VXLAN overlay.
+
+3. **Your cluster is full and scale-up is slow. What do you look at?**
+   > (a) Cluster Autoscaler / Karpenter logs — why isn't it adding nodes? (b) EC2 instance launch time (AMI pulls, user-data scripts). (c) Pod startup time (image pull via VPC endpoint? container init?). Karpenter fixes most of this — launches in 30-60s, picks right-sized instance.
+
+4. **Explain IRSA.**
+   > IAM Roles for Service Accounts. EKS exposes an OIDC provider. You create an IAM role whose trust policy references that OIDC URL + a specific Kubernetes ServiceAccount name. Annotate the SA with the role ARN. The pod's projected token is exchanged via `sts:AssumeRoleWithWebIdentity` → temp AWS creds. No static keys.
+
+5. **A Service of type LoadBalancer vs Ingress in EKS — which creates what?**
+   > With AWS Load Balancer Controller installed: `Service: LoadBalancer` → NLB. `Ingress` → ALB. Without the controller: legacy in-tree creates CLB/NLB. Prefer Ingress + ALB for HTTP workloads.
+
+---
+
+## Service 3: ECR
+
+### What it is
+
+**Elastic Container Registry** — AWS's private Docker image registry. Like DockerHub, but inside your AWS account.
+
+### Your project today uses DockerHub; on AWS you'd use ECR
+
+Your CI pushes to `docker.io/<you>/flask-app:<sha>` right now. The swap is:
+- Repository: `<acct>.dkr.ecr.us-east-1.amazonaws.com/flask-app`
+- Auth: **IAM**, not a DockerHub username/password. Your CI uses OIDC → assumes a role → `docker login` via `aws ecr get-login-password`.
+- Nodes pull via the node's IAM role + (optionally) the `ecr.api`/`ecr.dkr` VPC endpoints → no NAT bill, fast pulls.
+
+### Key concepts you must know
+
+**1. One repo per image name.**
+You'd create `flask-app` (and later maybe `postgres-init`, etc.). Each repo can hold many tags.
+
+**2. Lifecycle policies.**
+Without a lifecycle policy, you pay to store every commit SHA forever. Typical policy: keep last 30 tagged images, expire untagged after 7 days.
+
+```json
+{
+  "rules": [{
+    "rulePriority": 1,
+    "selection": {
+      "tagStatus": "any",
+      "countType": "imageCountMoreThan",
+      "countNumber": 30
+    },
+    "action": { "type": "expire" }
+  }]
+}
+```
+
+**3. Image scanning.**
+- **Basic** (free) — Clair-based CVE scan on push.
+- **Enhanced** (paid) — Inspector-powered, continuous rescans, deeper coverage.
+
+Both fail CI if you gate `aws ecr describe-image-scan-findings` → severity filter.
+
+**4. Pull-through cache.**
+ECR can mirror DockerHub / quay.io / k8s.gcr.io on demand. You pull `<acct>.dkr.ecr.us-east-1.amazonaws.com/docker-hub/library/postgres:15` → ECR fetches + caches + scans. Get DockerHub rate-limit relief + scanning on third-party images.
+
+**5. Cross-region / cross-account replication.**
+ECR can replicate images to another region for DR or another account for shared-services patterns.
+
+### How you'd implement it for this project
+
+**Terraform:**
+
+```hcl
+resource "aws_ecr_repository" "flask_app" {
+  name                 = "flask-app"
+  image_tag_mutability = "IMMUTABLE"   # you use SHA tags — make them uneditable
+  image_scanning_configuration { scan_on_push = true }
+  encryption_configuration { encryption_type = "AES256" }  # or KMS for CMK
+}
+
+resource "aws_ecr_lifecycle_policy" "flask_app" {
+  repository = aws_ecr_repository.flask_app.name
+  policy = jsonencode({
+    rules = [
+      { rulePriority = 1, selection = { tagStatus = "any", countType = "imageCountMoreThan", countNumber = 30 }, action = { type = "expire" } }
+    ]
+  })
+}
+```
+
+**Update your `.github/workflows/ci-pipeline.yaml`** to push to ECR via OIDC:
+
+```yaml
+permissions:
+  id-token: write        # OIDC
+  contents: read
+
+jobs:
+  build:
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::<acct>:role/github-actions-ecr-push
+          aws-region: us-east-1
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+
+      - run: |
+          IMAGE=${{ steps.ecr.outputs.registry }}/flask-app:${GITHUB_SHA::7}
+          docker build -t $IMAGE .
+          docker push $IMAGE
+```
+
+**IAM role for GitHub Actions OIDC:**
+
+```hcl
+resource "aws_iam_openid_connect_provider" "github" {
+  url             = "https://token.actions.githubusercontent.com"
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+}
+
+data "aws_iam_policy_document" "github_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:akhil27051999/Flask-REST-API:ref:refs/heads/main"]
+    }
+  }
+}
+
+resource "aws_iam_role" "github_ecr" {
+  name               = "github-actions-ecr-push"
+  assume_role_policy = data.aws_iam_policy_document.github_trust.json
+}
+```
+
+Result: **no long-lived AWS keys** in GitHub Secrets — huge security upgrade.
+
+### Gotchas
+
+- **`image_tag_mutability = "MUTABLE"` is the default.** With mutable tags, someone could re-push `flask-app:abc1234` pointing to a different image. With IMMUTABLE, your SHA-tagged deploys are provably the image you built.
+- **ECR auth tokens last 12 hours.** `docker login` reauths needed for long-running agents (the GH Action handles this, but your local dev setup can trip on it).
+- **Private subnets with no VPC endpoint pay NAT for every layer pull.** Always add `ecr.api` + `ecr.dkr` + `s3` (layer storage) endpoints.
+- **Cross-account pulls need a repository policy**, not just IAM on the puller.
+- **Lifecycle policy only deletes; it doesn't notify.** If you rely on tags, don't let lifecycle nuke them unexpectedly — scope by tag prefix if needed.
+
+### Interview Q&A
+
+1. **Why pick ECR over DockerHub for an EKS workload?**
+   > Same VPC = sub-second pulls. IAM-based auth (no static registry creds). Scanning on push. No rate limits. Logs to CloudTrail.
+
+2. **What does the pull flow look like on EKS?**
+   > Pod scheduled → kubelet calls container runtime → runtime uses node's IAM role (via IMDS) → `aws ecr get-authorization-token` → pull image over ECR interface endpoint → cached on node.
+
+3. **How do you keep ECR clean?**
+   > Lifecycle policies. Typical: keep last 30 tagged, expire untagged after 7 days. Without this, repos balloon to hundreds of GB fast in a CI-driven workflow.
+
+4. **You need to share an image with another AWS account. How?**
+   > Add a **repository policy** granting `ecr:BatchGetImage` + `ecr:GetDownloadUrlForLayer` to the other account's principal. Or use **replication** for read-heavy cross-account patterns.
+
+5. **Immutable vs mutable tags — which should your CI use, and why?**
+   > Immutable. CI tags by commit SHA, which is inherently unique. Immutability guarantees a given tag always points to the same image — if you roll back to `abc1234`, you get the exact image you tested. Mutable tags are a supply-chain risk.
+
+---
+
+## Service 4: RDS for PostgreSQL
+
+### What it is
+
+**Relational Database Service** — a managed Postgres instance. AWS handles installs, patches, backups, failover, major version upgrades (opt-in). You get a connection endpoint.
+
+### Your project today uses Postgres-in-K8s; on AWS you'd use RDS
+
+Your `helm/database` chart runs Postgres as a Kubernetes Deployment with a PVC. On AWS, you'd move it to **RDS** (or Aurora) and point your Flask app at the RDS endpoint. The chart goes away; the `postgres-secret` still holds `host/port/user/password`.
+
+### Key concepts you must know
+
+**1. Single-AZ vs Multi-AZ vs Multi-AZ DB Cluster.**
+
+| Mode | Standby | Failover time | Readable standby? | Cost |
+|------|---------|---------------|---------------------|------|
+| Single-AZ | None | N/A (manual restore) | — | Cheapest |
+| **Multi-AZ (classic)** | Sync standby in another AZ | 60–120s automatic | **No** | ~2× |
+| **Multi-AZ DB Cluster (new)** | 2 readable standbys, semi-sync | ~35s | **Yes** | ~3× |
+| Read replicas | Async, readable, separate region ok | Manual promotion | Yes | Per replica |
+
+For production: **Multi-AZ**. Downtime during patching drops from minutes to ~30s.
+
+**2. Storage autoscaling.**
+RDS can grow GP3/GP2 volumes up to a ceiling without downtime. Set a ceiling (e.g., 500GB) so a runaway write doesn't silently cost you.
+
+**3. Automated backups + PITR.**
+RDS snapshots daily + captures 5-min WAL. You can **restore to any point** within the backup window (7–35 days). Manual snapshots are retained until you delete them.
+
+**4. Parameter groups + Option groups.**
+- Parameter group = `postgresql.conf`. E.g., `shared_buffers`, `max_connections`. Some changes need reboot.
+- Option group = add-on features (less relevant for Postgres; more for SQL Server/Oracle).
+
+**5. RDS Proxy.**
+Pooling layer that sits between app and DB. Useful when you have many short-lived connections (serverless / containers) — stops you from exhausting Postgres's `max_connections`. Also handles **Secrets Manager password rotation transparently**.
+
+**6. IAM auth for Postgres.**
+You can authenticate with IAM tokens instead of a password — 15-min temporary tokens, no password rotation at all. Nice for apps using IRSA.
+
+### How you'd implement it for this project
+
+**Your existing DB subnets already exist** in `terraform/main.tf` (`aws_subnet.db_private` across 2 AZs). Add:
+
+```hcl
+resource "aws_db_subnet_group" "main" {
+  name       = "${var.project_name}-db"
+  subnet_ids = [for s in aws_subnet.db_private : s.id]
+}
+
+resource "aws_security_group_rule" "db_from_app" {
+  type                     = "ingress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.db_sg.id
+  source_security_group_id = aws_security_group.app_sg.id  # or EKS pod SG
+}
+
+resource "random_password" "db" {
+  length  = 32
+  special = true
+}
+
+resource "aws_secretsmanager_secret" "db_password" {
+  name = "${var.project_name}/postgres/password"
+}
+
+resource "aws_secretsmanager_secret_version" "db_password" {
+  secret_id     = aws_secretsmanager_secret.db_password.id
+  secret_string = random_password.db.result
+}
+
+resource "aws_db_instance" "postgres" {
+  identifier              = "${var.project_name}-postgres"
+  engine                  = "postgres"
+  engine_version          = "15.5"
+  instance_class          = "db.t3.medium"
+  allocated_storage       = 20
+  max_allocated_storage   = 100
+  storage_type            = "gp3"
+  storage_encrypted       = true
+  kms_key_id              = aws_kms_key.rds.arn
+
+  db_name                 = "studentdb"
+  username                = "postgres"
+  password                = random_password.db.result
+
+  db_subnet_group_name    = aws_db_subnet_group.main.name
+  vpc_security_group_ids  = [aws_security_group.db_sg.id]
+  multi_az                = true
+  publicly_accessible     = false
+
+  backup_retention_period = 14
+  backup_window           = "03:00-04:00"
+  maintenance_window      = "Sun:04:00-Sun:05:00"
+  deletion_protection     = true
+  skip_final_snapshot     = false
+
+  performance_insights_enabled    = true
+  monitoring_interval             = 60
+  enabled_cloudwatch_logs_exports = ["postgresql"]
+
+  apply_immediately = false   # ← wait for maintenance window
+}
+```
+
+**Your Flask app already reads DB creds from a K8s Secret** (synced by ESO). Point ESO at the Secrets Manager entry instead of Vault:
+
+```yaml
+# helm/external-secrets/templates/externalsecret-db.yaml
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: studentdb-secrets
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: aws-secretsmanager
+  target:
+    name: postgres-secret
+  data:
+    - secretKey: POSTGRES_PASSWORD
+      remoteRef:
+        key: two-az-network/postgres/password
+```
+
+App reads `POSTGRES_HOST=<rds-endpoint>` from values.yaml and `POSTGRES_PASSWORD` from the K8s Secret. Zero app code changes.
+
+### Gotchas
+
+- **DB subnet group needs ≥2 AZs** even for single-AZ RDS. Your existing subnets cover this.
+- **Public accessibility defaults to true** — always explicitly set `publicly_accessible = false`.
+- **Deletion protection is not the default.** Set `deletion_protection = true` + `skip_final_snapshot = false`. Without these, a `terraform destroy` nukes your DB instantly.
+- **Changing certain attributes (identifier, engine) forces replacement** — which means a new DB with no data. Use `lifecycle { ignore_changes = [...] }` or the `moved {}` block to rename safely.
+- **`apply_immediately = true` for parameter group changes restarts the DB right now.** Leave it false in prod.
+- **Connection limits.** `db.t3.medium` ≈ 200 `max_connections`. A Flask app with 10 pods × 20 gunicorn workers = 200 connections = your cap. Add **RDS Proxy** or reduce workers per pod.
+- **`random_password` in state.** Marked sensitive, but still in the state file. That's why we use Secrets Manager instead of hard-coding.
+
+### Interview Q&A
+
+1. **Multi-AZ vs Read Replica — difference?**
+   > Multi-AZ: **synchronous** standby for HA, **not readable**. Read replica: **async**, readable, used for read scaling or cross-region DR. Different problems.
+
+2. **Your RDS CPU is 95%. Walk me through diagnosis.**
+   > Performance Insights → top wait events + top SQL. Often: missing index (seq scan), lock contention, N+1 from ORM, or genuine load. Options: add index, scale instance class, add a read replica and route SELECTs there.
+
+3. **Explain Point-in-Time Recovery.**
+   > RDS captures WAL continuously during the backup window. You can restore to any second within that window. It creates a **new** DB instance from the restore — the old one isn't modified. Typical DR drill.
+
+4. **How do you rotate the DB password with zero downtime?**
+   > Secrets Manager's **managed rotation** for RDS: Lambda creates a new password in the DB (`ALTER USER`), writes it as a new secret version, apps refetch on auth failure. Even better: **RDS Proxy** intercepts auth and handles rotation transparently.
+
+5. **Why not just run Postgres on EKS with a StatefulSet?**
+   > You can, but: (a) you own backups, patching, failover playbooks; (b) you have to reason about PVC ownership, zonal affinity, PDBs; (c) no managed HA. RDS pays for itself the first time Multi-AZ catches a hardware fault at 3am.
+
+---
+
+## Service 5: IAM + IRSA
+
+### What it is
+
+**IAM** (Identity and Access Management) is AWS's permission system. Every API call is checked: "Is this principal allowed to do this action on this resource?"
+
+**IRSA** (IAM Roles for Service Accounts) = how a Kubernetes pod gets AWS credentials without static keys.
+
+### Your project today uses K8s RBAC; on AWS you add IAM on top
+
+Inside the cluster: RBAC decides which K8s operations a pod/user can do (get pods, list secrets). **IRSA** extends that so a pod can also do AWS operations (read from Secrets Manager, write to S3, pull from ECR). IRSA replaces "mount an AWS access key as a Secret."
+
+### Key concepts you must know
+
+**1. Principals, policies, resources.**
+
+| Principal | Attaches to | Use |
+|-----------|-------------|-----|
+| **Root user** | Account creator | Never use after setup. Lock away with MFA. |
+| **IAM User** | Humans (legacy) / CI (legacy) | Prefer SSO + roles |
+| **IAM Role** | Assumable — EC2, Lambda, pods | **Preferred everywhere** |
+| **Federated** | Users from Okta / Google / GitHub OIDC | Humans + CI in 2025 |
+
+**2. Policy evaluation (the order interviewers love to ask):**
 
 ```
-1. Explicit Deny  anywhere → DENY (overrides everything)
-2. Organization SCP does not Allow → DENY
-3. Resource-based policy Allows  ────────┐
-4. Identity-based policy Allows          │
-5. Permissions boundary Allows           ├── All-Allow? → ALLOW
-6. Session policy Allows  ───────────────┘
-7. Otherwise → DENY (implicit)
+Explicit Deny anywhere → DENY
+else SCP at org level must allow → else DENY
+else identity-based or resource-based must allow
+else permissions boundary must allow (if set)
+else session policy must allow (if set)
+else → DENY (implicit)
 ```
 
-**Cross-account:** Resource-based **or** identity-based Allow in the source account + identity-based Allow in the target account. Both sides must agree.
+The #1 interview pattern: **"Why is my role allowing list but denying get?"** — the denial is probably in a KMS key policy (for SSE-KMS) or a resource-based policy, not the identity policy they're staring at.
 
-### B.4 STS and AssumeRole
+**3. IRSA — the full flow:**
 
-STS (Security Token Service) issues **temporary credentials** (AccessKey + SecretKey + SessionToken + Expiry).
+```
+1. EKS exposes an OIDC provider:
+   https://oidc.eks.us-east-1.amazonaws.com/id/<CLUSTER_ID>
 
-APIs:
-- `sts:AssumeRole` — cross-account, cross-service
-- `sts:AssumeRoleWithSAML` — enterprise SSO
-- `sts:AssumeRoleWithWebIdentity` — OIDC (GitHub Actions, EKS pods)
-- `sts:GetSessionToken` — MFA-protected session for an IAM user
+2. You create an IAM role with a trust policy:
+   { Principal: Federated = <that OIDC provider ARN>,
+     Action: sts:AssumeRoleWithWebIdentity,
+     Condition: StringEquals on
+       "oidc.eks.us-east-1.amazonaws.com/id/<ID>:sub":
+         "system:serviceaccount:<namespace>:<serviceaccount-name>" }
 
-**Trust policy** on the role says "who can assume me":
+3. Annotate the ServiceAccount:
+   eks.amazonaws.com/role-arn: arn:aws:iam::<acct>:role/<role>
+
+4. Pod mounts a projected token → SDK calls sts:AssumeRoleWithWebIdentity
+   → temporary credentials injected as env vars:
+     AWS_ROLE_ARN, AWS_WEB_IDENTITY_TOKEN_FILE
+```
+
+Result: the pod — and **only** pods using that specific SA in that namespace — can call AWS APIs with that role's permissions.
+
+**4. Least privilege — an IAM policy per workload, not one big admin role.**
+
+For your Flask app that reads DB password from Secrets Manager, the policy is:
+
 ```json
 {
   "Version": "2012-10-17",
   "Statement": [{
     "Effect": "Allow",
-    "Principal": {"AWS": "arn:aws:iam::111122223333:root"},
-    "Action": "sts:AssumeRole",
-    "Condition": {"StringEquals": {"sts:ExternalId": "unique-shared-id"}}
+    "Action": ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+    "Resource": "arn:aws:secretsmanager:us-east-1:<acct>:secret:two-az-network/postgres/*"
   }]
 }
 ```
 
-**External ID** prevents the "confused deputy" problem when a 3rd party assumes your role.
+Not `"*"` on actions. Not `"*"` on resources. Not `secretsmanager:*`.
 
-### B.5 Roles for Services
+**5. External ID for 3rd parties.**
+When you let a vendor assume a role, include `sts:ExternalId` condition with a unique-per-customer string. Prevents "confused deputy" attacks.
 
-| Integration | Mechanism |
-|-------------|-----------|
-| **EC2** | Instance profile (role attached to instance metadata, apps call `http://169.254.169.254/latest/meta-data/iam/security-credentials/<role>` or use IMDSv2) |
-| **Lambda** | Execution role |
-| **ECS/Fargate task** | Task role (app) + Task execution role (agent pulls image, writes logs) |
-| **EKS pod** | **IRSA** (IAM Roles for Service Accounts) — OIDC-federated, `eks.amazonaws.com/role-arn` annotation on a ServiceAccount |
-| **GitHub Actions / CI** | OIDC federation — no long-lived keys |
-| **CodeBuild / CodePipeline** | Service roles |
+### How you'd implement it for this project
 
-**IMDSv2:** Session-token based. `IMDSv1` is vulnerable to SSRF; enforce IMDSv2 on all instances (`http_tokens=required`).
+**Roles you'd create:**
 
-### B.6 KMS (Key Management Service)
+| Role | Purpose | Trust |
+|------|---------|-------|
+| `github-actions-ecr-push` | CI pushes images | OIDC from GitHub |
+| `external-secrets-operator` | ESO reads secrets | IRSA (eso SA in external-secrets ns) |
+| `flask-app` | (optional) app reads/writes S3 | IRSA (flask-app SA in student-api ns) |
+| `aws-load-balancer-controller` | Manages ALBs | IRSA |
+| `karpenter` | Provisions nodes | IRSA |
+| `ebs-csi-controller` | Attaches EBS volumes | IRSA |
 
-**Envelope encryption** — the whole reason KMS is efficient:
+**Example: IRSA for the External Secrets Operator:**
+
+```hcl
+data "aws_iam_policy_document" "eso_trust" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    effect  = "Allow"
+    principals {
+      type        = "Federated"
+      identifiers = [module.eks.oidc_provider_arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "${module.eks.oidc_provider}:sub"
+      values   = ["system:serviceaccount:external-secrets:external-secrets"]
+    }
+  }
+}
+
+resource "aws_iam_role" "eso" {
+  name               = "eso-secretsmanager-reader"
+  assume_role_policy = data.aws_iam_policy_document.eso_trust.json
+}
+
+resource "aws_iam_role_policy" "eso_secrets" {
+  role = aws_iam_role.eso.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
+      Resource = "arn:aws:secretsmanager:*:*:secret:${var.project_name}/*"
+    }]
+  })
+}
 ```
-Plaintext ──encrypt with DEK──► Ciphertext  (stored alongside encrypted DEK)
-DEK       ──encrypt with CMK──► Encrypted DEK
-CMK never leaves KMS hardware (HSM-backed).
+
+Then in `helm/external-secrets/values.yaml`:
+
+```yaml
+serviceAccount:
+  create: true
+  name: external-secrets
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::<acct>:role/eso-secretsmanager-reader
 ```
 
-**Key types:**
+Done. ESO pods now authenticate to AWS as this role, scoped to your project's secrets.
 
-| Type | Control | Use |
-|------|---------|-----|
-| **AWS-owned** | AWS manages | Default encryption for many services; you don't see it |
-| **AWS-managed** (`aws/s3`, `aws/rds`) | AWS rotates annually; you see it, can't delete | Quick win: enable, done |
-| **Customer-managed (CMK)** | You control — policy, rotation, deletion | Required for audit, cross-account, BYOK |
+### Gotchas
 
-**Key policy** is the resource policy on a CMK. Unlike most resources, KMS **requires** an explicit Allow in the key policy for any principal — IAM alone isn't enough.
+- **"AccessDenied" even though my policy allows it** — check in this order: (a) SCP at org level, (b) explicit Deny, (c) KMS key policy (for encrypted resources), (d) resource-based policy (S3, SQS), (e) `iam:PassRole` for launch configs.
+- **IRSA trust condition mismatch** — the `Condition.StringEquals` must exactly match `system:serviceaccount:<ns>:<sa>`. Typos are silent failures.
+- **IAM is eventually consistent.** New roles/policies can take seconds-to-minutes to propagate. Don't retry too fast.
+- **`iam:PassRole` is needed by the caller, not the callee.** To launch an EC2 with an instance profile, the launcher needs `iam:PassRole` on that role's ARN.
+- **Don't grant `*` on resources "temporarily."** It never gets tightened.
+- **Root user bypasses SCPs and IAM.** Enable hardware MFA on root, store credentials in a safe, never use them.
 
-**Grants** = lightweight, programmatic permissions (used by services like EBS to use the key on your behalf).
+### Interview Q&A
 
-**Key rotation:** Automatic (AWS-managed 1-yr, CMK opt-in 1-yr), manual (create new CMK, update aliases).
+1. **IAM user vs IAM role — why prefer roles?**
+   > Users have long-lived credentials (password, access keys) that can leak. Roles have **no credentials** — they're assumed, yielding temporary tokens (15 min – 12 hrs). Leaked? Expires automatically. Use roles for everything except break-glass human accounts.
 
-### B.7 Secrets Manager vs SSM Parameter Store
+2. **Walk me through IRSA.**
+   > (Deliver the 4-step flow above verbatim.)
+
+3. **What does `iam:PassRole` guard against?**
+   > Privilege escalation. Without it, anyone who can create an EC2 could pass an admin role to it and run arbitrary code with those permissions. `iam:PassRole` lets you restrict which roles a principal can attach to launched resources.
+
+4. **Describe a policy evaluation outcome when both identity and resource policies are involved (e.g., cross-account S3).**
+   > Cross-account: **both** sides must allow. Identity policy in account A (the caller) grants S3 GetObject. Bucket policy in account B grants that principal GetObject. If either is missing, Deny.
+
+5. **How do you rotate AWS credentials used by CI?**
+   > You don't — you remove them. OIDC federation (GitHub Actions → AWS IAM role) means CI assumes a role per job, gets 15-60 min creds, done. No keys to rotate.
+
+---
+
+## Service 6: Secrets Manager
+
+### What it is
+
+A managed secrets store. Encrypted at rest (KMS), versioned, access-controlled via IAM, with optional automatic rotation via Lambda functions.
+
+### Your project today uses Vault + ESO; on AWS you'd use Secrets Manager + ESO (keeping ESO)
+
+You already have the pattern: **External Secrets Operator** syncs secrets from an external store into Kubernetes `Secret` objects. Right now that store is Vault. On AWS, you point ESO at Secrets Manager (or SSM Parameter Store for cheap configs).
+
+**You don't rewrite your apps.** Apps still read `POSTGRES_PASSWORD` from a K8s Secret mounted as env var. The magic happens in ESO config.
+
+### Secrets Manager vs SSM Parameter Store
 
 | | **Secrets Manager** | **SSM Parameter Store** |
 |---|---|---|
-| Cost | ~$0.40/secret/mo + API calls | Free (Standard) |
-| Rotation | Built-in with Lambda functions (RDS/Aurora native) | DIY |
-| Size limit | 64 KB | 4 KB (Standard), 8 KB (Advanced) |
-| KMS encryption | Always | SecureString only |
-| Cross-account | Resource policy | Resource policy (Advanced) |
+| Cost | $0.40/secret/month + API calls | Free (Standard), $0.05/advanced |
+| **Rotation** | **Built-in Lambda-based (RDS/Aurora native)** | DIY |
+| Size limit | 64 KB | 4 KB (Std), 8 KB (Adv) |
+| Cross-account | Resource policy | Resource policy (Advanced only) |
 | Versioning | Yes | Yes |
-| Best for | Credentials, API keys needing rotation | Config, feature flags, non-rotating secrets |
+| When to pick | DB creds, API keys needing rotation | Config, feature flags, plaintext non-secrets |
 
-**In this project:** Vault + ESO plays the Secrets Manager role. Migration path: swap Vault provider for AWS SecretsManager provider in ESO, or use the native **Secrets Store CSI Driver**.
+**Rule of thumb:** Secrets Manager for anything rotatable; Parameter Store for everything else. Your project's DB password → Secrets Manager. Your feature flags or Prometheus scrape interval → Parameter Store.
 
-### B.8 Detection & Audit Services
+### Key concepts you must know
 
-| Service | What it does |
-|---------|-------------|
-| **CloudTrail** | Records every API call (management + data events). Ship to S3 + CloudWatch Logs. **Turn on in every account, every region.** |
-| **Config** | Tracks resource configurations over time + compliance rules (e.g., "no public S3 buckets"). |
-| **GuardDuty** | Threat detection (ML on CloudTrail, VPC Flow Logs, DNS logs). Detects crypto-mining, port scans, compromised credentials. |
-| **Security Hub** | Aggregates findings from GuardDuty, Inspector, Macie, 3rd-parties. Compliance packs (CIS, PCI). |
-| **Inspector** | Vulnerability scanning for EC2, ECR images, Lambda. |
-| **Macie** | PII/sensitive-data discovery in S3. |
-| **Detective** | Graph-based incident investigation. |
-| **Audit Manager** | Evidence collection for compliance frameworks. |
+**1. Automatic rotation for RDS.**
+Secrets Manager has a built-in rotation Lambda for RDS Postgres/MySQL. Flip one toggle, it rotates on schedule, zero downtime (reader gets both old+new password during transition).
 
-### B.9 Perimeter Protection
+**2. Resource-based policies.**
+Each secret can have its own policy. Useful for cross-account: "let account B's IAM role read this specific secret."
 
-| Service | Layer |
-|---------|-------|
-| **WAF** | L7 — OWASP managed rules, rate limits, bot control. Attach to ALB, CloudFront, API GW, AppSync. |
-| **Shield Standard** | Free, auto-on DDoS protection at L3/4. |
-| **Shield Advanced** | Paid (~$3k/mo). Cost protection, DRT access, L7 mitigations, advanced reports. |
-| **Firewall Manager** | Central WAF/Shield/NACL policies across accounts. |
-| **Network Firewall** | Managed stateful firewall for VPC ingress/egress (Suricata rules). |
+**3. Versioning + staging labels.**
+Every write creates a new version. Labels (`AWSCURRENT`, `AWSPREVIOUS`, `AWSPENDING`) point at specific versions. During rotation, Lambda promotes `AWSPENDING` → `AWSCURRENT` atomically.
 
-### B.10 Encryption in Transit & at Rest
+**4. Cache on the client.**
+Don't fetch every call. Use the AWS Secrets Manager SDK's cache or ESO's `refreshInterval` (default 1h is fine for DB passwords).
 
-| Data state | Default options |
-|------------|----------------|
-| In-transit | TLS 1.2+ via ACM. HTTPS on ALB/CloudFront/API GW. Private CA via ACM PCA. |
-| At rest (storage) | S3 SSE-S3/SSE-KMS/SSE-C/DSSE-KMS. EBS encryption-by-default. EFS encryption-by-default. |
-| At rest (DB) | RDS storage encryption (KMS). DynamoDB always encrypted. |
-| End-to-end app | Envelope encryption via KMS Data Keys; clients decrypt locally. |
+### How you'd implement it for this project
 
-**ACM:** Free public certs, auto-renewal. Attach to ALB/CF/API GW — no manual rotation. PCA for private CA.
+**Terraform — create a secret + rotation for RDS:**
 
-### B.11 Organizations, SCPs, Control Tower
+```hcl
+resource "aws_secretsmanager_secret" "db" {
+  name                    = "${var.project_name}/postgres/credentials"
+  kms_key_id              = aws_kms_key.secrets.arn
+  recovery_window_in_days = 7
+}
 
-**AWS Organizations** = multi-account management (billing, OUs, SCPs, trust).
+resource "aws_secretsmanager_secret_version" "db" {
+  secret_id = aws_secretsmanager_secret.db.id
+  secret_string = jsonencode({
+    username = "postgres"
+    password = random_password.db.result
+    host     = aws_db_instance.postgres.address
+    port     = 5432
+    dbname   = "studentdb"
+  })
+}
 
-**Why multi-account?**
-- Hard isolation (a compromised dev account can't touch prod).
-- Separate billing.
-- Per-account service quotas.
-
-**Recommended landing zone:**
-```
-Root
-├── Management (payer)          # billing, Orgs API, SSO
-├── Log Archive                 # central CloudTrail/Config logs
-├── Audit (Security)            # Security Hub delegated admin, GuardDuty
-├── Shared Services             # central DNS, AD, golden AMIs
-├── Workloads OU
-│   ├── Prod
-│   ├── Staging
-│   └── Dev / Sandbox
-└── Suspended OU                # for off-boarded accounts
+# Optional: built-in rotation Lambda
+resource "aws_secretsmanager_secret_rotation" "db" {
+  secret_id           = aws_secretsmanager_secret.db.id
+  rotation_lambda_arn = aws_lambda_function.rds_rotator.arn
+  rotation_rules {
+    automatically_after_days = 30
+  }
+}
 ```
 
-**SCP** — denies or allows service/action at the account level. **Does not grant** by itself; it caps what IAM can grant. Classic guardrails:
-- Deny use of regions other than approved ones.
-- Deny deletion of CloudTrail.
-- Require IMDSv2 on EC2.
-- Deny attaching IGW (in workload accounts).
+**Wire ESO to Secrets Manager** — swap out your current Vault `ClusterSecretStore`:
 
-**Control Tower** — packaged landing zone (OUs + SCP guardrails + audit account + SSO). Opinionated, fast.
+```yaml
+# helm/external-secrets/templates/clustersecretstore-aws.yaml
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: aws-secretsmanager
+spec:
+  provider:
+    aws:
+      service: SecretsManager
+      region: us-east-1
+      auth:
+        jwt:
+          serviceAccountRef:
+            name: external-secrets
+            namespace: external-secrets
+```
 
-### B.12 Identity Center (SSO)
+**And the ExternalSecret** (same shape you already use, different `remoteRef.key`):
 
-Single identity source → federated roles in each account.
+```yaml
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: studentdb-secrets
+  namespace: student-api
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: aws-secretsmanager
+    kind: ClusterSecretStore
+  target:
+    name: postgres-secret
+    creationPolicy: Owner
+  data:
+    - secretKey: POSTGRES_PASSWORD
+      remoteRef:
+        key: two-az-network/postgres/credentials
+        property: password
+    - secretKey: POSTGRES_USER
+      remoteRef:
+        key: two-az-network/postgres/credentials
+        property: username
+```
 
-Flow: User → Identity Center portal → pick account + permission set → STS AssumeRole → console/CLI.
+Your Flask Deployment keeps reading from `postgres-secret` — **zero app changes**. Only the source of the secret moved.
 
-Permission Set = templated role (name + policies) that Identity Center provisions into each account.
+### Gotchas
 
-**CLI:** `aws configure sso` → named profiles → `aws sts get-caller-identity` confirms.
+- **`recovery_window_in_days` defaults to 30.** If you `terraform destroy` a secret, it's soft-deleted for 30 days — you can't create a new one with the same name until then. For dev/test, set to `0` (immediate deletion); for prod, keep 30 (disaster protection).
+- **KMS dependency.** Reading a KMS-encrypted secret needs both `secretsmanager:GetSecretValue` AND `kms:Decrypt` on the CMK. Miss the KMS grant → "AccessDenied" with an unclear error.
+- **Rotation Lambda needs VPC access to reach RDS.** If RDS is in a private subnet (it should be), the rotator Lambda needs subnet + SG config.
+- **Apps cache stale passwords.** After rotation, apps hitting DB with old password fail until they refetch. Best: connection-error retry → refetch → reconnect. Or use **RDS Proxy** (handles this transparently).
+- **`secretsmanager:ListSecrets` needs `*` resource.** You can't list a specific secret — listing is account-wide. Use it sparingly.
 
-### B.13 IAM/Security Troubleshooting Scenarios
+### Interview Q&A
 
-1. **"AccessDenied" even though my policy allows.** Check (a) explicit Deny somewhere (identity, resource, SCP, boundary); (b) Condition keys not matching (MFA, IP); (c) wrong resource ARN; (d) typo in Action; (e) resource-based policy doesn't allow your principal.
-2. **EKS pod can't access S3 despite IRSA configured.** ServiceAccount annotation + trust policy on role must match the OIDC provider URL exactly. Check with `aws sts get-caller-identity` from a debug pod.
-3. **Role assumption works from CLI but not from Lambda.** Lambda's execution role is being used; `sts:AssumeRole` from inside Lambda needs both the execution role to allow `sts:AssumeRole` **and** the target role's trust policy to list the execution role.
-4. **S3 bucket encrypted with KMS — user can list but can't GetObject.** Add `kms:Decrypt` on the CMK (key policy + IAM). S3 permission alone isn't enough for SSE-KMS objects.
-5. **CloudTrail is "enabled" but I don't see the event.** Data events (S3 object-level, Lambda invocations, DynamoDB item-level) are NOT captured by default — enable explicitly, charged separately.
-6. **GuardDuty finding: "CryptoCurrency:EC2/BitcoinTool.B!DNS"** → likely compromised IAM credentials on an EC2. Rotate keys, check IMDSv2, look at CloudTrail `GetCallerIdentity` from unusual IPs.
-7. **"iam:PassRole" denied on launch template.** Passing a role to a service (EC2, ECS, Lambda) requires the launching principal to have `iam:PassRole` on that role's ARN. Common CI/CD fail.
-8. **Confused deputy — 3rd party vendor accidentally touched the wrong account.** Missing External ID on the trust policy. Add it.
-9. **SCP blocks a new feature.** SCPs with "only allow these actions" patterns break when AWS adds a new API. Prefer Deny-lists for agility.
-10. **Permissions boundary not working.** Common: boundary doesn't include `iam:*` actions, so the user can't create resources the identity policy otherwise allows.
+1. **Secrets Manager vs Parameter Store — when each?**
+   > Secrets Manager: rotating credentials (DBs, API keys), costs $0.40/secret/mo, RDS-native rotation. Parameter Store: config, feature flags, non-rotating — free (Std). Rule: rotation → SM, else PS.
 
-### B.14 IAM/Security Interview Q&A
+2. **Explain automatic rotation for an RDS password.**
+   > Secrets Manager invokes a Lambda (from its library) with 4 steps: `createSecret` (new password in AWSPENDING), `setSecret` (ALTER USER on DB), `testSecret` (connect with new), `finishSecret` (promote AWSPENDING → AWSCURRENT). The app re-authenticates on failure and picks up the new password.
 
-1. **What is the difference between IAM users and roles?**
-   > Users have long-lived credentials (or console password). Roles have **no credentials** — they're assumed, yielding temporary STS creds. Prefer roles for everything except break-glass humans.
+3. **You're seeing "AccessDeniedException" on GetSecretValue. What do you check?**
+   > (a) Principal has `secretsmanager:GetSecretValue` on the secret ARN. (b) Secret's resource policy doesn't explicitly deny. (c) Principal has `kms:Decrypt` on the secret's KMS key. (d) KMS key policy allows the principal.
 
-2. **Walk me through policy evaluation.**
-   > Explicit Deny → Deny. Else SCP must allow. Else one of identity / resource policy must allow; boundary + session must allow if present. Else implicit Deny.
+4. **How does ESO authenticate to Secrets Manager on EKS?**
+   > Via IRSA — the ESO ServiceAccount is annotated with an IAM role ARN whose trust policy allows the EKS OIDC provider + that specific SA. ESO pod gets temp STS creds via projected token → uses them to call Secrets Manager.
 
-3. **How does IRSA work in EKS?**
-   > EKS exposes an OIDC provider per cluster. Create IAM role with trust policy referencing that OIDC URL and a specific ServiceAccount. Annotate the ServiceAccount with the role ARN. The pod's projected token is exchanged via `sts:AssumeRoleWithWebIdentity` → temporary creds in env vars.
-
-4. **What's IMDSv2 and why does it matter?**
-   > Instance Metadata Service v2 requires a session token (PUT→GET pattern), hardening against SSRF attacks that exploited v1's simple GET. Required for modern security.
-
-5. **How do you rotate an RDS master password?**
-   > Secrets Manager with managed rotation calls a Lambda that generates a new password, updates RDS, updates the secret. Apps read the current version and retry on failure.
-
-6. **What's envelope encryption?**
-   > Data encrypted with a Data Encryption Key (DEK), DEK encrypted with a Customer Master Key (CMK) in KMS. Scales because CMK isn't used on the data directly; DEKs are.
-
-7. **Resource policy vs identity policy — when to use each?**
-   > Resource policies are mandatory for: cross-account, KMS key access, S3/SQS/SNS where the resource owner wants control. Identity policies for: everything else, centralized permission management.
-
-8. **What's a Service-Linked Role?**
-   > A role created and owned by an AWS service (e.g., `AWSServiceRoleForECS`). You can't edit its trust policy. Exists so services can act on your account's resources.
-
-9. **Describe cross-account S3 access.**
-   > Option 1: Bucket policy in A grants principals in B; B's IAM also allows it. Option 2: S3 ACL grant to canonical ID (old, avoid). Option 3: Access Point with cross-account policy.
-
-10. **What's a VPC Endpoint policy used for — security-wise?**
-    > Restricts which resources/APIs can be called through that endpoint. Example: gateway endpoint to S3 allowing only `arn:aws:s3:::my-company-*` buckets. Prevents data exfiltration to third-party buckets.
-
-11. **Difference between Shield Standard and Advanced?**
-    > Standard: free, L3/4 automatic. Advanced: ~$3k/mo, L7 protection, cost-attack protection, DDoS Response Team (DRT), historical reports.
-
-12. **What is an SCP?**
-    > Service Control Policy — Organization-level guardrail at the account boundary. Caps what IAM in that account can grant. Doesn't itself grant permissions.
-
-13. **Why should you never use the root user?**
-    > Root has unrestricted, ungovernable access (bypasses SCPs, IAM). Compromise = account takeover. Use IAM Identity Center + roles; lock away root creds + hardware MFA.
-
-14. **How do you give a 3rd-party vendor least-privilege access?**
-    > Create a role in your account with the minimum policy they need. Trust policy allows their account as principal + `sts:ExternalId` condition with a unique ID you share only with them. Never share IAM user keys.
-
-15. **STS token expiry — how do you handle long-running jobs?**
-    > Default 1h (role), up to 12h. Use a refreshing credential provider (AWS SDKs handle this with `AssumeRoleProvider`), or for scripts, re-assume periodically.
-
-16. **What's the difference between KMS Grant and Key Policy?**
-    > Key policy is static IAM-like. Grants are programmatic, time-limited, per-context (encryption context) — used when another AWS service needs to use your CMK on your behalf (EBS volume encryption, for instance).
-
-17. **CloudTrail event goes to S3 but how do you alert on it?**
-    > CloudTrail → CloudWatch Logs → metric filter (pattern match on API event name) → CloudWatch alarm → SNS → Slack/email. Or EventBridge rule directly on CloudTrail events.
-
-18. **How do you centralize security findings across accounts?**
-    > Security Hub with delegated admin in a dedicated audit account. GuardDuty, Inspector, Macie, Config all feed it. Single pane for multi-account.
-
-19. **What is federation, and how does it differ from IAM users?**
-    > Federation = users authenticate in an external IdP (Okta, Google, AD, Cognito) then assume an IAM role. No IAM user per human. Centralized lifecycle (offboarding in IdP revokes access).
-
-20. **Your CI/CD is using long-lived AWS keys. How do you migrate to OIDC?**
-    > In CI provider (GitHub Actions, GitLab), enable OIDC. Create an IAM role with trust policy referencing the OIDC provider + condition on repo/branch. CI job calls `AssumeRoleWithWebIdentity`. Delete the IAM user keys.
+5. **Why use ESO instead of Secrets Store CSI Driver?**
+   > Both work. ESO materializes secrets as native K8s Secrets — simpler mental model, compatible with everything. CSI Driver mounts them directly as files, no K8s Secret created — slightly more secure (secret never in etcd) but more coupling. ESO's nicer for GitOps.
 
 ---
 
-## Part C — Databases
+## Service 7: ALB + Route 53 + ACM
 
-### C.1 Service Map
+These three are inseparable for "give me a public HTTPS URL."
 
-| Service | Type | Best at |
-|---------|------|---------|
-| **RDS** | Managed relational (Postgres, MySQL, MariaDB, Oracle, SQL Server) | Lift-and-shift from self-managed DBs |
-| **Aurora** | AWS-built MySQL/Postgres compatible | Cloud-native RDBMS with better HA, throughput, autoscaling |
-| **DynamoDB** | Managed NoSQL (key-value + document) | Massive scale, single-digit ms latency, fully serverless |
-| **ElastiCache** | Managed Redis / Memcached | Caching, session store, pub/sub |
-| **Redshift** | Columnar MPP data warehouse | Analytical queries, PB-scale |
-| **DocumentDB** | Managed MongoDB-compatible | Mongo workloads on AWS |
-| **Neptune** | Managed graph DB | Social graphs, fraud detection |
-| **Keyspaces** | Managed Cassandra | Cassandra users wanting managed |
-| **Timestream** | Managed time-series | IoT, metrics |
-| **QLDB** | Immutable ledger | Audit trails, financial ledgers |
-| **OpenSearch** | Managed Elasticsearch fork | Search, log analytics |
+### What they are
 
-### C.2 RDS Deep Dive
+- **Application Load Balancer (ALB)** — L7 HTTP(S) load balancer. Routes by path/host/header/method/query.
+- **Route 53** — DNS. Holds your `example.com` hosted zone, answers queries, supports health-checked failover.
+- **AWS Certificate Manager (ACM)** — free public TLS certs with auto-renewal. Attaches to ALB / CloudFront / API Gateway.
 
-**Architecture:**
-- Single-AZ: 1 instance. SLA: ~99.5%. Downtime during maintenance/failure.
-- **Multi-AZ (standby)**: synchronous replica in another AZ, automatic failover (60–120s). SLA: 99.95%.
-- **Multi-AZ DB cluster (new)**: 1 writer + 2 readable standbys, semi-sync, faster failover (~35s), readable.
-- **Read replicas**: async, up to 15 (Aurora), cross-region supported. Eventual consistency.
+### Your project today uses minikube nginx (local); on AWS you'd use ALB + Route 53 + ACM
 
-**Engines & features:**
-| Engine | Version freshness | Special |
-|--------|------------------|---------|
-| Postgres | Near-upstream | Large ecosystem, extensions (PostGIS, pg_stat_statements) |
-| MySQL | 5.7 / 8.0 | Binlog for replication |
-| MariaDB | 10.x | Light alternative to MySQL |
-| Oracle / SQL Server | BYOL or Licence-Included | Enterprise workloads |
+In minikube: `kubectl get ingress` returns an internal IP, you hit it via `/etc/hosts`. On AWS: the **AWS Load Balancer Controller** watches your Ingress resources and provisions an ALB in your public subnets. Route 53 points `api.example.com` at the ALB. ACM provides `*.example.com` cert. Zero manual cert management.
 
-**Operational controls:**
-- **Parameter groups** = my.cnf / postgresql.conf. DB-level settings. Some require reboot.
-- **Option groups** = features (e.g., SQL Server SSRS, MySQL MEMCACHED).
-- **Automated backups** — daily snapshot + 5-min continuous WAL → **Point-in-time recovery (PITR)** within backup window (7–35 days).
-- **Manual snapshots** — retained until you delete.
-- **Encryption** — storage, snapshots, replicas all encrypted with the same KMS key chain. Can't un-encrypt an instance; snapshot + restore with encryption.
-- **Performance Insights** — visualize DB load by wait state, top SQL.
-- **Enhanced Monitoring** — 1–60s OS-level metrics (CPU, memory, disk).
+### Key concepts you must know
 
-**Scaling:**
-- Vertical: change instance class (requires restart, ~5 min).
-- Storage autoscaling: grows GP2/GP3 up to a ceiling.
-- Read scaling: read replicas with app-side routing.
+**1. Ingress → ALB (via controller).**
+Install `aws-load-balancer-controller` (Helm chart). It watches Ingress objects with `ingressClassName: alb` and creates ALBs in AWS.
 
-### C.3 Aurora Deep Dive
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flask-api
+  namespace: student-api
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip            # pod IPs directly (vs instance NodePort)
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:<acct>:certificate/<id>
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/group.name: shared         # share one ALB across ingresses
+spec:
+  ingressClassName: alb
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: flask-api-service
+                port:
+                  number: 5000
+```
 
-- **Shared storage layer** — 6 copies of data across 3 AZs (4-of-6 writes, 3-of-6 reads).
-- **Up to 15 read replicas**, all sharing the same storage — no replica lag from WAL shipping.
-- **Faster failover** (~30s).
-- **Aurora Serverless v2** — auto-scales ACUs in seconds by workload.
-- **Global Database** — writer in primary region, async storage-level replication to up to 5 secondary regions (<1s lag). Fast promote for DR.
-- **Backtrack** (MySQL) — "rewind" the DB in place without restore.
-- **Parallel Query** — push WHERE/aggregation into storage layer.
+Controller sees this → creates ALB → listener on 443 with your ACM cert → target group pointing at Flask pod IPs.
 
-### C.4 DynamoDB Deep Dive
+**2. Alias records vs CNAME.**
+Route 53 **Alias** is AWS-specific — lets you point a **zone apex** (`example.com`) at an ALB/CloudFront/S3 website. Regular CNAMEs cannot be set at an apex. Always prefer Alias when the target is AWS.
 
-**Data model:** Tables → Items → Attributes. **Partition Key** (mandatory) + optional **Sort Key** → "composite primary key." Attributes are schemaless.
+**3. ACM cert validation.**
+Two methods:
+- **DNS validation** — add a `_validation` CNAME record to Route 53. Auto-renews forever.
+- **Email validation** — old, fragile.
+DNS is what you want. With Terraform + Route 53 it's ~10 lines.
 
-**Capacity modes:**
-| Mode | Billing | When |
-|------|---------|------|
-| **Provisioned** | RCU/WCU per second | Predictable traffic; cheaper at scale; Auto Scaling supported |
-| **On-Demand** | Per-request | Spiky/unknown traffic; pay more per req but no capacity management |
+**4. Health checks.**
+ALB health-checks targets on a path you specify (`/health`). Unhealthy targets are drained. Deregistration delay (default 300s) gives in-flight requests time to finish before terminating a target.
 
-**Indexes:**
-| Index | Keys | Consistency | Scope |
-|-------|------|-------------|-------|
-| **GSI** | Any PK/SK | Eventually consistent | Up to 20 per table; own capacity |
-| **LSI** | Same PK, different SK | Strongly consistent option | Must be defined at table creation; max 5 |
+**5. SSL/TLS offload.**
+ALB terminates TLS. Backend traffic can be HTTP (cheap) or HTTPS end-to-end (compliance). Inside a private subnet with an SG-restricted target group, HTTP is usually fine.
 
-**Consistency:**
-- **Eventually consistent** (default, cheaper, 2x reads for the RCU).
-- **Strongly consistent** — `ConsistentRead=true`. Not supported on GSI.
+### How you'd implement it for this project
 
-**Streams + Lambda** = change data capture → trigger downstream.
+**Terraform: hosted zone + cert + records.**
 
-**Global Tables** — multi-region active-active, last-writer-wins.
+```hcl
+resource "aws_route53_zone" "main" {
+  name = "example.com"
+}
 
-**DAX** — DynamoDB Accelerator — in-memory cache (microsecond reads).
+resource "aws_acm_certificate" "main" {
+  domain_name               = "example.com"
+  subject_alternative_names = ["*.example.com"]
+  validation_method         = "DNS"
+  lifecycle { create_before_destroy = true }
+}
 
-**Transactions** — ACID across up to 100 items, 2x cost.
+resource "aws_route53_record" "cert_validation" {
+  for_each = {
+    for dvo in aws_acm_certificate.main.domain_validation_options :
+    dvo.domain_name => { name = dvo.resource_record_name, record = dvo.resource_record_value, type = dvo.resource_record_type }
+  }
+  zone_id = aws_route53_zone.main.zone_id
+  name    = each.value.name
+  type    = each.value.type
+  records = [each.value.record]
+  ttl     = 60
+}
 
-**Hot partition** — 3000 RCU / 1000 WCU per partition ceiling. Fix: better key distribution (suffix, composite), or on-demand.
+resource "aws_acm_certificate_validation" "main" {
+  certificate_arn         = aws_acm_certificate.main.arn
+  validation_record_fqdns = [for r in aws_route53_record.cert_validation : r.fqdn]
+}
+```
 
-### C.5 ElastiCache
+**Install ALB Controller** (Helm, with IRSA):
 
-| | **Redis** | **Memcached** |
-|---|---|---|
-| Data structures | Strings, lists, sets, hashes, sorted sets, streams, pub/sub | Strings only |
-| Persistence | RDB snapshots, AOF | None |
-| Replication | Primary + replicas, auto-failover (MemoryDB/Redis Cluster) | None |
-| TLS / AUTH | Yes | No (use Redis) |
-| Clustering | Redis Cluster (sharded) | Consistent hashing at client |
-| Use | Cache + pub/sub + queues + leaderboards | Simple cache |
+```bash
+helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+  -n kube-system \
+  --set clusterName=$CLUSTER_NAME \
+  --set serviceAccount.create=true \
+  --set serviceAccount.name=aws-load-balancer-controller \
+  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=$ROLE_ARN
+```
 
-**MemoryDB for Redis** — Redis-compatible, but durable (multi-AZ transaction log) — OK as primary DB.
+**Point DNS at the Ingress's ALB** — use **ExternalDNS** controller so DNS updates automatically from Ingress annotations:
 
-### C.6 Redshift
+```yaml
+# ingress annotation ExternalDNS watches:
+external-dns.alpha.kubernetes.io/hostname: api.example.com
+```
 
-- Columnar + MPP. Query PB with SQL.
-- **RA3 nodes** — compute + managed storage (S3-backed, scales independently).
-- **Spectrum** — query S3 directly via external tables (like Athena).
-- **Distribution styles:** EVEN, KEY, ALL, AUTO. Pick KEY for join-heavy.
-- **Sort keys:** compound vs interleaved. Keeps data physically ordered.
-- **Concurrency Scaling** — bursts extra clusters for peak query load.
-- **Workload Management (WLM)** — query queues by user/group.
+ExternalDNS creates/updates the Route 53 Alias A record automatically when the ALB appears. No manual `terraform apply` for DNS.
 
-### C.7 Migration: DMS & SCT
+### Gotchas
 
-- **DMS (Database Migration Service)** — source → target replication, homogeneous or heterogeneous (Oracle → Aurora Postgres).
-- **SCT (Schema Conversion Tool)** — converts schema + stored procs.
-- **CDC (Change Data Capture)** — initial load + continuous replication for cut-over.
+- **`target-type: instance` vs `ip`.** `instance` sends traffic via NodePort → kube-proxy → pod (extra hop, less precise). `ip` sends directly to pod IPs (requires VPC CNI, which you have). Always use `ip` on EKS.
+- **`group.name` shares one ALB across Ingresses.** Without it, every Ingress creates its own ALB ($20/mo each). With it, many Ingresses share one ALB grouped by annotation.
+- **ACM certs are regional.** An ALB in us-east-1 needs an ACM cert in us-east-1. CloudFront certs must be in us-east-1 specifically (global edge).
+- **Cert validation never completes.** Usually: the validation CNAME isn't propagating because your hosted zone isn't authoritative. Check NS records at your registrar.
+- **ALB SGs are inferred** by the controller — but you can override. If you need to lock down ALB → only VPN traffic, set SG explicitly.
+- **Slow pod readiness breaks health.** Deregistration delay is 300s; if pods take 2 min to become ready, rollouts can look broken. Tune `alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=30`.
 
-### C.8 Backup, Restore & DR
+### Interview Q&A
 
-| Approach | RPO | RTO | Cost |
-|----------|-----|-----|------|
-| **Backup & restore** (snapshots) | Hours | Hours | Low |
-| **Pilot light** (DB replicating, app off) | Minutes | Minutes | Medium |
-| **Warm standby** (scaled-down replica running) | Seconds | Minutes | Medium-High |
-| **Multi-site active/active** (Global Tables, Aurora Global Writer Forwarding) | Near-zero | Near-zero | Highest |
+1. **ALB vs NLB — when pick which?**
+   > ALB: L7 (HTTP), routes by path/host/header, terminates TLS, WAF integration, OIDC auth built-in. NLB: L4 (TCP/UDP), ultra-low latency, preserves client IP, gets a static IP/EIP per AZ, millions of conn/sec. Pick ALB for web apps, NLB for non-HTTP or when you need static IPs (PrivateLink services).
 
-### C.9 Database Interview Q&A
+2. **How does the AWS Load Balancer Controller work?**
+   > It runs as a deployment in the cluster with IRSA. Watches `Ingress` objects with `ingressClassName: alb`. For each one, calls AWS APIs (`elbv2:CreateLoadBalancer`, `elbv2:CreateTargetGroup`, `elbv2:CreateListener`) to provision the ALB, then syncs pod IPs into the target group. Deletes things when Ingresses go away.
 
-1. **RDS Multi-AZ vs Read Replica — difference?**
-   > Multi-AZ = synchronous standby for HA, not readable. Read replica = async, readable, for scaling reads. Some engines let you promote a read replica to primary.
+3. **Why Alias record vs CNAME?**
+   > CNAME can't exist at the apex of a zone (`example.com` itself). Alias is AWS's extension on A/AAAA records that points at an AWS resource. Free queries (Route 53 doesn't charge for alias resolution). Use Alias wherever possible.
 
-2. **What does Aurora do differently from RDS?**
-   > Storage is decoupled — 6-way replicated across 3 AZs. Replicas share it, so lag is sub-10ms. Failover is ~30s. Throughput is 5x MySQL, 3x Postgres at comparable cost.
+4. **Your cert isn't validating. Where do you look?**
+   > ACM shows "Pending validation" → check that the `_validation` CNAME exists in the hosted zone AND that the hosted zone is authoritative for the domain (NS records at the registrar point to Route 53). Propagation after that is usually <5 min.
 
-3. **Why is DynamoDB "hot partition" a problem?**
-   > Data is sharded by partition key hash. A key that all traffic funnels into exceeds the per-partition RCU/WCU, throttling. Fix: spread keys, use random suffixes, or on-demand.
-
-4. **LSI vs GSI?**
-   > LSI: same PK, alternate SK, strongly consistent, defined at creation, counts against table's 10GB per-partition limit. GSI: any attributes, own capacity, eventually consistent, can be added later.
-
-5. **How do you achieve strongly-consistent reads on DynamoDB?**
-   > `ConsistentRead=true` on GetItem/Query — costs 2x RCU. Not available on GSI; GSIs are always eventually consistent.
-
-6. **Explain Aurora Global Database.**
-   > Primary region + up to 5 secondary regions. Storage-level async replication with <1s lag and <1min RPO. Manual promotion, fast failover in ~1 min. Supports headless secondaries.
-
-7. **When would you pick Redshift over Athena?**
-   > Predictable high-concurrency analytical workloads that benefit from pre-loaded data + MPP cluster resources. Athena for ad-hoc, infrequent queries directly on S3, pay-per-query.
-
-8. **Your RDS is at 95% CPU — diagnosis steps.**
-   > Performance Insights → top wait events + top SQL → explain analyze → missing index, lock contention, N+1 query, or just genuine load → add read replica / scale up / fix query.
-
-9. **Your Postgres RDS replication lag is growing. Why?**
-   > Large writes on primary (bulk import), long transactions holding WAL, replica under-provisioned, replication slot blocked. Check `pg_stat_replication`.
-
-10. **DynamoDB auto-scaling is on, but you still hit `ProvisionedThroughputExceededException`. Why?**
-    > Scaling isn't instantaneous. Target utilization default 70%, cooldowns apply. Spiky traffic scales slower than On-Demand. Options: raise floor, switch to on-demand, add DAX.
-
-11. **How do you enforce encryption-at-rest on all new RDS in an account?**
-    > Config rule "rds-storage-encrypted" flags non-compliant. SCP can deny `rds:CreateDBInstance` unless `StorageEncrypted=true`. Launch templates / Terraform defaults.
-
-12. **DynamoDB transaction limits?**
-    > Up to 100 items and 4 MB total across tables. 2× WCU/RCU cost. All-or-nothing. Scoped to a single region (not Global Tables-atomic).
-
-13. **What is Aurora Serverless v2 useful for?**
-    > Workloads with variable load (dev/staging, bursty SaaS tenants). Scales ACUs in seconds without a proxy — use it as a drop-in Aurora cluster.
-
-14. **How do you do blue/green for a DB schema change?**
-    > **RDS Blue/Green Deployments** clone the DB, apply schema changes on green, replicate primary → green, then switchover (~1 min downtime). Or manual: read replica, promote, switch endpoint.
-
-15. **DynamoDB cost blowing up — first things to investigate.**
-    > Scans (avoid — use Query), missing indexes (full scans fall back), GSI overprovisioning, TTL not configured so old data grows, on-demand on a steady workload (move to provisioned), hot partitions amplifying capacity.
+5. **How do you do a canary deployment with ALB?**
+   > (a) Target group with weighted routing: two target groups, ALB listener rule with weights (e.g., 95/5). Shift over time. (b) Argo Rollouts with ALB target-group integration — handles the weighting + automated rollback on SLI breach. Option (b) is what you want in production.
 
 ---
 
-## Part D — Storage
+## Service 8: S3
 
-### D.1 S3 (Simple Storage Service)
+### What it is
 
-**Object store:** unlimited objects, up to 5 TB each. 99.999999999% (11-nines) durability, 99.99% availability (Standard).
+**Simple Storage Service** — AWS's object store. Unlimited objects up to 5 TB each. 11 nines durability. Access by HTTPS API or by `s3://bucket/key`.
 
-**Storage classes:**
+### Your project would use S3 for (in order of priority)
 
-| Class | Use | First-byte | Min charge period |
-|-------|-----|-----------|--------------------|
+1. **Terraform state backend** — `backend "s3"` with DynamoDB table for locking. **Must do.**
+2. **RDS automated backups to S3** — AWS manages this, you just see it.
+3. **Application artifacts** — CI build outputs, locust test results, pdf exports.
+4. **Log archives** — VPC Flow Logs, ALB access logs, CloudTrail.
+5. **Static assets** — if your Flask app ever serves static files + React frontend.
+
+### Key concepts you must know
+
+**1. Storage classes.**
+
+| Class | Use | First-byte | Min charge |
+|-------|-----|-----------|------------|
 | **Standard** | Hot data | ms | — |
-| **Intelligent-Tiering** | Unknown/changing access pattern | ms (frequent tier) | 30d |
-| **Standard-IA** | Infrequent access | ms | 30d |
-| **One Zone-IA** | Reproducible, single AZ OK | ms | 30d |
-| **Glacier Instant Retrieval** | Archive with millisecond reads | ms | 90d |
-| **Glacier Flexible Retrieval** | Archive, retrieval in minutes–hours | minutes/hours | 90d |
-| **Glacier Deep Archive** | Compliance archive, cheapest | 12h | 180d |
+| **Intelligent-Tiering** | Unknown access pattern | ms (frequent tier) | 30d |
+| **Standard-IA** | Infrequent | ms | 30d |
+| **One Zone-IA** | Reproducible, single-AZ OK | ms | 30d |
+| **Glacier Instant Retrieval** | Archive, ms reads | ms | 90d |
+| **Glacier Flexible / Deep Archive** | Long-term compliance | minutes–hours | 90d / 180d |
 
-**Lifecycle rules** move objects between classes and expire them.
+Use **lifecycle rules** to transition objects between classes automatically.
 
-**Versioning** — protects against overwrites/deletes. A delete becomes a "delete marker," original still retrievable.
+**2. Block Public Access.**
+Account-level + bucket-level toggle. **Turn on everywhere by default.** Protects against accidentally exposing a bucket via a wrong policy.
 
-**Object Lock** — WORM (Write-Once-Read-Many) for compliance. Governance (admins can override) or Compliance (nobody, even root, during retention) modes.
+**3. Versioning.**
+Keeps every version of an object. A "delete" becomes a delete-marker — original is recoverable. Essential for Terraform state buckets (can recover from bad `terraform apply`).
 
-**Encryption:**
-| Mode | Keys |
-|------|------|
-| SSE-S3 | S3-managed |
-| SSE-KMS | Customer CMK |
-| SSE-C | Customer-provided key per request |
-| DSSE-KMS | Double-layer, FIPS contexts |
-| Client-side | Encrypted before upload |
+**4. Encryption.**
+- **SSE-S3** — S3-managed key, free.
+- **SSE-KMS** — your CMK, audit trail, key policy control.
+- **DSSE-KMS** — double-layer encryption for FIPS contexts.
+- Enable **default encryption** on the bucket so every upload gets encrypted.
 
-**Access control (modern):**
-- **Block Public Access** — account + bucket-level. **Turn on everywhere by default.**
-- **Bucket policy** (resource policy).
-- **Access Points** — named endpoints with their own policy; great per-team or per-workload.
-- **Multi-region Access Point** — single global endpoint, fails over.
-- **Object Ownership** — "Bucket owner enforced" disables ACLs entirely (recommended).
+**5. Access control — in 2025 you want.**
+- `BlockPublicAcls = true`
+- `IgnorePublicAcls = true`
+- `BlockPublicPolicy = true`
+- `RestrictPublicBuckets = true`
+- Object Ownership: **"Bucket owner enforced"** (disables ACLs entirely)
+- Bucket policy for cross-account, nothing else.
 
-**Performance:**
-- No partition naming hack needed anymore (3,500 PUT / 5,500 GET per prefix auto-scales).
-- Multipart upload for >100 MB (required >5 GB).
-- **Transfer Acceleration** — via CloudFront edges.
-- **S3 Select** — SQL on a single object (CSV/JSON/Parquet).
+### How you'd implement it for this project
 
-**Cost traps:**
-- Cross-region data transfer.
-- `LIST` + `GET` on Glacier classes incur retrieval fees.
-- IA classes have 128 KB minimum size per object for billing.
-- Transfer-out to internet.
+**Terraform state backend — do this FIRST, before anything else:**
 
-**Notification & events:** S3 Event Notifications → SNS/SQS/Lambda/EventBridge. Great ETL trigger pattern.
+```hcl
+# terraform/backend.tf (bootstrap this bucket manually or in a separate stack)
+resource "aws_s3_bucket" "tfstate" {
+  bucket = "flask-rest-api-tfstate-${data.aws_caller_identity.current.account_id}"
+}
+resource "aws_s3_bucket_versioning" "tfstate" {
+  bucket = aws_s3_bucket.tfstate.id
+  versioning_configuration { status = "Enabled" }
+}
+resource "aws_s3_bucket_server_side_encryption_configuration" "tfstate" {
+  bucket = aws_s3_bucket.tfstate.id
+  rule { apply_server_side_encryption_by_default { sse_algorithm = "aws:kms" kms_master_key_id = aws_kms_key.s3.arn } }
+}
+resource "aws_s3_bucket_public_access_block" "tfstate" {
+  bucket                  = aws_s3_bucket.tfstate.id
+  block_public_acls       = true
+  ignore_public_acls      = true
+  block_public_policy     = true
+  restrict_public_buckets = true
+}
+resource "aws_dynamodb_table" "tfstate_lock" {
+  name         = "terraform-state-lock"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
+  attribute { name = "LockID" type = "S" }
+}
+```
 
-### D.2 EBS (Elastic Block Store)
+Then in every other Terraform stack:
 
-Block storage attached to one EC2 at a time (except `io2 Block Express` multi-attach).
+```hcl
+terraform {
+  backend "s3" {
+    bucket         = "flask-rest-api-tfstate-<account-id>"
+    key            = "network/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "terraform-state-lock"
+    encrypt        = true
+  }
+}
+```
 
-| Type | Use | Perf |
-|------|-----|------|
-| **gp3** | General purpose, **default** | Baseline 3000 IOPS / 125 MB/s; pay to increase |
-| **gp2** | Legacy general | Performance tied to size |
-| **io2 / io2 Block Express** | High IOPS, mission critical | Up to 256k IOPS, sub-ms |
-| **st1** | Big sequential (logs, data lake on EC2) | Throughput-optimized HDD |
-| **sc1** | Cold HDD | Cheapest |
+**Application log archive with lifecycle:**
 
-**Snapshots:** incremental to S3 (internal). Copy across regions. Fast Snapshot Restore (FSR) warms blocks for predictable perf after restore.
+```hcl
+resource "aws_s3_bucket" "logs" {
+  bucket = "${var.project_name}-logs-${data.aws_caller_identity.current.account_id}"
+}
+resource "aws_s3_bucket_lifecycle_configuration" "logs" {
+  bucket = aws_s3_bucket.logs.id
+  rule {
+    id = "archive"
+    status = "Enabled"
+    transition { days = 30  storage_class = "STANDARD_IA" }
+    transition { days = 90  storage_class = "GLACIER" }
+    expiration { days = 365 }
+  }
+}
+```
 
-**Encryption:** Enable "encryption by default" per region → all new volumes encrypted with default/custom CMK.
+### Gotchas
 
-### D.3 EFS (Elastic File System)
+- **`force_destroy = true` on a bucket deletes everything in it.** Scary, useful for dev. Never in prod.
+- **Versioned bucket + lifecycle expiration** — make sure you're expiring both current AND noncurrent versions, otherwise deleted versions accumulate forever.
+- **CloudTrail data events are OFF by default.** S3 object-level GetObject / PutObject aren't logged unless you enable them (charged separately). Enable for sensitive buckets.
+- **Cross-region replication costs.** It's per-GB replicated. Only replicate what matters (state bucket — yes; build artifacts — probably no).
+- **Bucket names are global.** Someone else may have taken your preferred name. Use `${project}-${env}-${account-id}` to guarantee uniqueness.
+- **Pre-signed URLs don't respect Block Public Access.** A valid pre-signed URL works regardless; BPA protects against wide-open ACLs/policies, not URL-based sharing.
 
-**NFSv4 network file system** shared across EC2/ECS/EKS.
+### Interview Q&A
 
-- **Performance modes:** General Purpose (default) / Max I/O (higher parallelism, higher latency).
-- **Throughput modes:** Bursting (based on size) / Provisioned / Elastic.
-- **Lifecycle management** → IA + Archive tiers for rarely-accessed files.
-- **Access Points** — per-app POSIX uid/gid + root path isolation.
+1. **How would you store Terraform state on AWS?**
+   > S3 bucket with versioning + SSE-KMS + Block Public Access + bucket policy scoped to the ops IAM role. DynamoDB table for state locking (`hash_key = "LockID"`). `terraform { backend "s3" {...} }` in every stack.
 
-**Cost:** more $/GB than S3 or EBS. Use only when you need POSIX + sharing.
+2. **S3 accidentally made public. What do you do?**
+   > (a) Enable Block Public Access at account + bucket. (b) Audit bucket policy + ACLs, strip public grants. (c) Enable "Bucket owner enforced" to disable ACLs going forward. (d) Parse CloudTrail data events + S3 access logs for external reads during the exposure window. (e) Rotate anything sensitive. (f) Add AWS Config rule + Access Analyzer for continuous detection.
 
-### D.4 FSx Family
+3. **Which storage class for CI build logs kept 1 year?**
+   > Lifecycle: Standard → Standard-IA (after 30d) → Glacier Flexible (after 90d) → Expire at 365d. Or Intelligent-Tiering if access is unpredictable.
 
-| Variant | For |
-|---------|-----|
-| **FSx for Windows** | SMB, AD-joined Windows workloads |
-| **FSx for Lustre** | HPC, ML training, with S3 link |
-| **FSx for NetApp ONTAP** | Enterprise NetApp features (SnapMirror, etc.) |
-| **FSx for OpenZFS** | ZFS snapshots/clones |
+4. **SSE-KMS vs SSE-S3 — why pay for KMS?**
+   > SSE-S3 uses an S3-managed key — no audit trail, no fine-grained access control. SSE-KMS uses your CMK — every decrypt is in CloudTrail, key access is gated by the key policy (e.g., deny access outside office hours). Pick SSE-KMS for anything sensitive.
 
-### D.5 Storage Gateway
-
-On-prem hybrid:
-- **S3 File Gateway** — NFS/SMB → S3 objects.
-- **Volume Gateway** — iSCSI → EBS snapshots.
-- **Tape Gateway** — virtual tape → Glacier.
-
-### D.6 Backup Services
-
-- **AWS Backup** — central policy-based backups across EBS, RDS, DynamoDB, EFS, FSx, Storage Gateway. Cross-region, cross-account.
-- **DataSync** — bulk migration/sync between on-prem NFS/SMB/HDFS and S3/EFS/FSx.
-
-### D.7 Storage Interview Q&A
-
-1. **Which S3 storage class for logs you rarely read but must keep 1 year?**
-   > Lifecycle rule: Standard → IA (after 30d) → Glacier Flexible (after 90d) → expire at 1y. Or Intelligent-Tiering if access is unpredictable.
-
-2. **Your S3 bucket is accidentally public. Steps to remediate.**
-   > Enable Block Public Access at account + bucket. Review bucket policy + ACLs. Enable "Bucket owner enforced" to disable ACLs. Scan CloudTrail for reads. Enable Access Analyzer.
-
-3. **How does S3 guarantee 11 nines of durability?**
-   > Each object replicated across ≥3 AZs with checksums; continuous integrity verification; auto-repair.
-
-4. **What's the difference between SSE-KMS and SSE-S3?**
-   > SSE-S3 uses an S3-managed AES-256 key (no KMS cost, no audit trail). SSE-KMS uses your CMK — audit via CloudTrail, access control via KMS policy — but KMS API calls cost and add latency.
-
-5. **S3 Access Points vs bucket policies?**
-   > Access Points are per-application DNS entries with their own policy scoped to a prefix. Cleaner than cramming many conditions into a single bucket policy at scale.
-
-6. **EBS volume full, need to expand. Any downtime?**
-   > `ModifyVolume` API — online resize. Then filesystem grow (`resize2fs` / `xfs_growfs`) without unmount. Cooldown of ~6h before next modification.
-
-7. **When would you pick EFS over S3?**
-   > Need POSIX semantics (atomic rename, byte-level updates, locking), multi-host read/write, legacy app expects a mount point.
-
-8. **How do you migrate 500 TB from on-prem to S3?**
-   > DataSync if you have >1 Gbps clean pipe. Snowball Edge if bandwidth-constrained. Snowmobile (truck!) for petabytes in remote locations.
-
-9. **S3 object-level permissions (ACL) vs bucket policy — which wins?**
-   > Union: access granted if *any* evaluates to Allow, unless explicit Deny. Best practice: disable ACLs ("Bucket owner enforced"), use policies only.
-
-10. **Which EBS type for a boot volume on a general-purpose app?**
-    > gp3 — cheaper than gp2, baseline IOPS independent of size, tunable.
+5. **How does S3 achieve 11 nines of durability?**
+   > Each object is replicated across ≥3 AZs in the region, with checksums. Continuous integrity verification; auto-repair on detected corruption. Individual drive/server failures are transparent to you.
 
 ---
 
-## Part E — Compute
+## Service 9: CloudWatch + AMP/AMG
 
-### E.1 EC2 Basics
+### What it is
 
-**Instance families** (letters = category):
-- **M** — general purpose (M7g = Graviton3 ARM)
-- **C** — compute optimized
-- **R** — memory optimized
-- **X / z** — extra memory
-- **I / D / Im** — storage/NVMe
-- **P / G / Inf / Trn** — GPU/ML accelerator
-- **T** — burstable (credits) — cheap for bursty, small workloads
-- **A / Graviton (g suffix)** — ARM (cheaper/$perf on compatible workloads)
+- **CloudWatch Metrics** — time-series store for AWS service metrics + custom metrics.
+- **CloudWatch Logs** — log aggregation with retention, subscription filters, metric filters, Logs Insights queries.
+- **CloudWatch Alarms** — threshold-based alerts → SNS / EventBridge.
+- **AMP (Amazon Managed Service for Prometheus)** — managed Prometheus-compatible TSDB. You keep your PromQL and scrape configs.
+- **AMG (Amazon Managed Grafana)** — managed Grafana. Same dashboards.
 
-**Purchasing options:**
+### Your project today uses OSS Prometheus + Grafana + Loki; on AWS you have two choices
 
-| Type | Discount | Commit | Use |
-|------|----------|--------|-----|
-| **On-Demand** | — | None | Spikes, dev |
-| **Reserved Instance** | Up to 72% | 1 or 3 yr | Stable baseline |
-| **Savings Plans** | Up to 72% | 1 or 3 yr | Like RI but flexible across family/region |
-| **Spot** | Up to 90% | Can be reclaimed in 2 min | Stateless, fault-tolerant workloads |
-| **Dedicated Host / Instance** | — | License compliance | BYOL, regulatory |
-| **Capacity Reservations** | — | Reserve capacity (not pricing) | Guarantee instances for events/DR |
+**Option A — Keep OSS on EKS** (minimal changes)
+Run your existing `helm/prometheus`, `helm/grafana`, `helm/loki` unchanged. Ship a copy of relevant metrics to CloudWatch Metrics via CloudWatch Agent or Fluent Bit for AWS-service-alarm integration.
 
-**Placement groups:**
-- **Cluster** — same rack, 10 Gbps between nodes. HPC.
-- **Spread** — across distinct racks/AZ. Small critical clusters (Kafka, Zookeeper).
-- **Partition** — racks grouped into partitions, one per partition fails independently. Hadoop/Cassandra.
+**Option B — Move metrics to AMP, dashboards to AMG**
+- Your Prometheus `remote_write` to AMP (ingestion endpoint).
+- AMG dashboards point at AMP as a data source.
+- Less ops — no PVC tuning, no Prometheus OOM risk, no Grafana upgrades.
 
-**Auto Scaling Group (ASG):**
-- Launch template (desired AMI, instance types, user data).
-- Min/Max/Desired capacity.
-- Scaling policies: target tracking, step, scheduled.
-- Health checks: EC2 (default) or ELB (preferred).
-- **Lifecycle hooks** — let you run actions at launch/terminate (drain traffic, backup).
+**Logs**: either keep Loki on EKS, or swap to **CloudWatch Logs + Logs Insights**. CloudWatch Logs is simpler; Loki is cheaper at very high volume.
 
-**User data** — boot-time script (cloud-init). Rendered from Terraform template. `cloud-init-output.log` for debugging.
+**Recommendation for this project:** start with Option A (keep OSS, ship selective metrics to CloudWatch). Move to AMP/AMG if the Prometheus instance starts needing real care.
 
-**IMDSv2** — required pattern for metadata access.
+### Key concepts you must know
 
-### E.2 Elastic Beanstalk / Lightsail
+**1. Metric Filters.**
+Extract a metric from a CloudWatch Logs stream via pattern matching. Example: count `ERROR` lines → `FlaskAppErrors` metric → alarm on rate.
 
-- **Beanstalk** — PaaS-like: push code, AWS provisions EC2 + ALB + ASG. Good for simple web apps; heavy underneath (exposes underlying resources).
-- **Lightsail** — ultra-simple VPS pricing (bundled bandwidth). Not for production at scale.
+**2. CloudWatch Logs Insights query language.**
 
-### E.3 Lambda
-
-**Execution model:** function + event → Lambda provisions an execution environment (container), runs, tears down (or caches "warm").
-
-| Concept | Detail |
-|---------|--------|
-| **Cold start** | First invocation after idle — runtime init. Reduce with provisioned concurrency, smaller deps, SnapStart (Java). |
-| **Concurrency** | Reserved (dedicated pool + cap) vs provisioned (pre-warmed). Account limit 1000 default. |
-| **Timeouts** | Max 15 min. For longer, use Step Functions / ECS. |
-| **Memory** | 128 MB–10 GB. CPU scales proportionally to memory. |
-| **Runtimes** | Node.js, Python, Java, .NET, Go, Ruby, custom via container image. |
-| **Event sources** | API Gateway, S3, SNS, SQS, EventBridge, DDB Streams, Kinesis, ALB, Step Functions… |
-| **Destinations** | Async invocations route success/failure to SQS/SNS/EventBridge/Lambda. |
-| **Layers** | Shared code/libs across functions. |
-| **VPC access** | Opt-in. Cold starts can increase. Needs subnets + SG. |
-| **Dead Letter Queue** | SQS/SNS for failed async events. |
-
-**Pricing:** number of requests + GB-seconds (memory × duration). Very cheap for low volumes.
-
-### E.4 Auto Scaling & Load Across Compute
-
-Target-tracking on CPU, ALB request count, or custom metric — simplest and usually enough. Step policies when you need asymmetric scale-up vs scale-down. Predictive scaling uses ML.
-
----
-
-## Part F — Containers & Serverless
-
-### F.1 ECR (Elastic Container Registry)
-
-- Private Docker/OCI registries per account.
-- **Image scanning** (Basic — Clair; Enhanced — Inspector).
-- **Lifecycle policies** to expire old images (avoid bill creep).
-- **Cross-region replication**, cross-account pull-through.
-- **Pull-through cache** rules mirror Docker Hub / quay.io images on demand.
-
-### F.2 ECS (Elastic Container Service)
-
-| Launch type | Who runs it |
-|-------------|-------------|
-| **EC2** | You manage the EC2 hosts |
-| **Fargate** | AWS runs containers serverlessly — no hosts to manage |
-
-**Abstractions:**
-- **Task Definition** — container spec (image, CPU, mem, env, volumes).
-- **Service** — keeps N copies of a Task Definition running; can integrate with ALB target group.
-- **Cluster** — logical grouping.
-
-**Networking modes (EC2 launch):** `awsvpc` (recommended — each task gets its own ENI; SG scoping), `bridge`, `host`.
-
-### F.3 EKS (Elastic Kubernetes Service)
-
-Managed control plane (API server, etcd, scheduler) — you manage worker nodes (EC2, managed node groups, or Fargate profiles).
-
-**Deep concepts (mapped from Module 5):**
-
-| K8s | AWS-native |
-|-----|-----------|
-| Cluster networking | VPC CNI plugin (pod IP = ENI secondary IP from VPC CIDR — no overlay) |
-| Ingress | AWS Load Balancer Controller → ALB/NLB |
-| PersistentVolume | EBS CSI driver / EFS CSI driver / FSx CSI |
-| Service → LoadBalancer | NLB (by default via AWS LB Controller) |
-| Cluster autoscaler | **Karpenter** (next-gen) or classic CA on ASGs |
-| ServiceAccount → IAM | **IRSA** (OIDC-federated roles) |
-| Secrets | External Secrets Operator w/ AWS SM/Parameter Store, or **Secrets Store CSI Driver** |
-| Logs | Fluent Bit → CloudWatch Logs / OpenSearch / Kinesis Firehose |
-
-**Upgrade path:** plan K8s version bumps quarterly; extended support available for +1 year at extra cost.
-
-### F.4 Fargate (both ECS and EKS)
-
-Per-vCPU + per-GB pricing, no nodes. Ideal for:
-- Variable workloads.
-- Security isolation (per-task kernel).
-- Small teams that don't want to patch nodes.
-
-Tradeoffs: higher $/vCPU than EC2 at steady-state; no DaemonSets in EKS-Fargate; no GPUs; slower pod start.
-
-### F.5 App Runner
-
-Fully managed container web app service — `code` or `image` → URL, with autoscaling + TLS. No infra to run. Simpler than ECS/EKS for a single service.
-
----
-
-## Part G — Messaging & Integration
-
-| Service | Pattern |
-|---------|---------|
-| **SQS Standard** | At-least-once, nearly unlimited TPS, best-effort order |
-| **SQS FIFO** | Exactly-once, ordered within MessageGroupId, 3000 msg/s (batching) |
-| **SNS** | Pub/Sub fan-out to Lambda/SQS/HTTP/Email/SMS; FIFO variant |
-| **EventBridge** | Event bus with rules/targets; schema registry; SaaS partner events; cron scheduling |
-| **Step Functions** | Serverless orchestration (state machines); retries, parallel, wait, choice; Express vs Standard workflows |
-| **API Gateway** | REST (full featured), HTTP (lighter, cheaper), WebSocket. Auth via IAM/Cognito/Lambda authorizer |
-| **AppSync** | Managed GraphQL (DynamoDB/RDS/Lambda resolvers) |
-| **MQ** | Managed RabbitMQ / ActiveMQ (lift-and-shift JMS) |
-| **MSK** | Managed Kafka |
-| **Kinesis Data Streams** | Ordered, replayable streams. Shards = units of capacity |
-| **Kinesis Firehose** | Managed delivery to S3/Redshift/OpenSearch, no shards |
-| **Kinesis Analytics** | SQL/Flink on streams |
-
-**Idempotency** is the caller's problem in every messaging system. Store a dedup token in DynamoDB if the API is non-idempotent.
-
----
-
-## Part H — Observability on AWS
-
-| Signal | Native tool | OSS alt (what we use) |
-|--------|-------------|------------------------|
-| Metrics | CloudWatch Metrics | Prometheus |
-| Logs | CloudWatch Logs / OpenSearch | Loki |
-| Dashboards | CloudWatch Dashboards | Grafana |
-| Tracing | X-Ray | Jaeger / Tempo |
-| Alerts | CloudWatch Alarms → SNS | Alertmanager → Slack |
-| Ingestion | CloudWatch Agent / Fluent Bit | Promtail / OTel Collector |
-| RUM | CloudWatch RUM | — |
-| Synthetics | CloudWatch Synthetics | Blackbox exporter |
-
-**CloudWatch Logs Insights** — SQL-ish query language:
 ```
 fields @timestamp, @message
 | filter @message like /ERROR/
 | stats count() by bin(5m)
+| sort @timestamp desc
 ```
 
-**EMF (Embedded Metric Format)** — log structured JSON that CloudWatch auto-extracts as metrics (cheaper than PutMetric for high cardinality).
+SQL-ish, fast enough for ad-hoc digging.
 
-**Amazon Managed Service for Prometheus / Grafana (AMP/AMG)** — managed OSS. A common middle ground between CloudWatch and running your own stack.
+**3. Embedded Metric Format (EMF).**
+Log structured JSON in a specific format; CloudWatch auto-extracts high-cardinality metrics without PutMetric API calls. Cheaper at scale.
 
-**Cross-account observability** — source accounts send logs/metrics to a monitoring account via Observability Access Manager.
+**4. Cross-account observability.**
+Observability Access Manager lets source accounts ship metrics/logs to a central monitoring account. Useful if you run multi-account.
 
----
+**5. Retention.**
+CloudWatch Logs default retention is **Never Expire** — storage costs balloon silently. Set retention on every log group (14d / 30d / 90d based on need).
 
-## Part I — Cost, Governance & Organizations
+### How you'd implement it for this project
 
-### I.1 Cost
+**Option A: Keep OSS, ship critical metrics to CloudWatch.**
 
-- **Cost Explorer** — visualize spend, forecast, by service/account/tag.
-- **Budgets** — alert when actual/forecast crosses thresholds.
-- **Cost Anomaly Detection** — ML alerts on unusual spend.
-- **Compute Optimizer** — right-sizing recommendations (EC2, ASG, Lambda, EBS).
-- **Trusted Advisor** — checks (idle resources, underutilized RIs, security).
+Install CloudWatch Container Insights add-on → gives you node/pod CPU/mem/disk in CloudWatch Metrics automatically. Your existing Prometheus/Grafana stack continues to serve detailed metrics.
 
-### I.2 Tagging Strategy
+```bash
+aws eks create-addon --cluster-name $CLUSTER --addon-name amazon-cloudwatch-observability
+```
 
-At minimum: `Environment`, `Owner`, `CostCenter`, `Application`. Enforce with SCP (`aws:RequestTag/Environment`) and Config rules. Tag Editor for bulk updates.
+**Fluent Bit for logs to CloudWatch** (replace/augment Promtail if you want centralized search across cluster + AWS services):
 
-### I.3 Savings Plans vs RIs vs Spot
+```yaml
+# fluent-bit.conf (as DaemonSet)
+[OUTPUT]
+    Name              cloudwatch_logs
+    Match             *
+    region            us-east-1
+    log_group_name    /aws/eks/${CLUSTER}/application
+    log_stream_prefix ${HOSTNAME}-
+    auto_create_group true
+```
 
-- **Compute Savings Plan** — 1/3yr commit $/hr; applies across EC2/Fargate/Lambda, any region, any family.
-- **EC2 Instance SP** — family-specific, slightly deeper discount.
-- **Reserved Instances** — legacy; Savings Plans preferred.
-- **Spot** — up to 90% off; 2-min interruption notice; great for CI runners, batch, stateless autoscaling groups.
+**Alarms** for things that should wake someone up:
 
-### I.4 AWS Organizations Deep Dive (continued)
+```hcl
+resource "aws_cloudwatch_metric_alarm" "rds_cpu_high" {
+  alarm_name          = "rds-cpu-over-85"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 5
+  period              = 60
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/RDS"
+  statistic           = "Average"
+  threshold           = 85
+  dimensions = { DBInstanceIdentifier = aws_db_instance.postgres.id }
+  alarm_actions = [aws_sns_topic.critical.arn]
+}
+```
 
-- **Consolidated billing** — aggregate invoices, shared volume discounts, pooled RI/SP savings.
-- **Delegated admin** — spread operational ownership (Security Hub admin in audit account, CloudFormation StackSets admin, etc.) without handing out root.
-- **StackSets** — deploy CloudFormation stacks across many accounts/regions from the mgmt account.
+Route SNS → Slack via **AWS Chatbot** (no Lambda needed) or via a Lambda that posts to your existing Alertmanager Slack webhook.
 
----
+### Gotchas
 
-## Cross-Cutting Troubleshooting Scenarios
+- **Log group retention defaults to Never.** Bills creep. Always set retention.
+- **CloudWatch Logs PutLogEvents quota** — 5 req/s per log stream. Use multiple streams or switch to Firehose → S3 for high volume.
+- **Alarm `evaluation_periods × period`** determines how long it takes to fire. For infra alarms, 5 × 60s = 5 min detection is typical. Too short → noise; too long → late pages.
+- **Composite alarms** let you combine multiple alarms with AND/OR before paging. Great for reducing alert fatigue ("page only if both error rate AND latency SLO are breached").
+- **AMG costs per active user.** Fine for small teams, expensive for 50+ engineers.
 
-1. **The app is slow and CloudWatch shows ALB `TargetResponseTime` spiking.** → is the issue at the target (check container CPU/mem/X-Ray), or at the DB (RDS Performance Insights), or in a downstream API (circuit breaker showing timeouts)? Use the RED method: Rate/Errors/Duration per dependency.
-2. **IAM role policy update propagated slowly.** IAM is **eventually consistent**. New roles/policies can take seconds-to-minutes to fully replicate across regions/services. Retry or use STS with immediate scope.
-3. **S3 cross-account access failing after a policy change.** Double-check: bucket policy allows principal, principal's IAM allows it, KMS key policy allows it (if SSE-KMS), Block Public Access isn't denying at account/bucket level, Object Ownership is "Bucket owner enforced."
-4. **EKS pod stuck in `Pending` with "Insufficient pods".** VPC CNI ENI quota hit — instance type's max pods exceeded. Enable prefix delegation (`WARM_PREFIX_TARGET=1`) or use Karpenter to pick a bigger type.
-5. **CloudFront returns 403 on S3 origin.** OAC not configured, or bucket policy doesn't allow the CloudFront service principal, or Block Public Access is still blocking the policy.
-6. **"Rate exceeded" on Terraform apply.** AWS API rate-limiting. Add `provider` `max_retries`, reduce parallelism (`-parallelism=5`), split stacks.
-7. **Lambda inside a VPC has massive cold starts.** Historically ENI attach was slow — AWS changed this (Hyperplane ENIs 2019+), but misconfiguration (small subnets with no free IPs) still causes failures. Add capacity or use provisioned concurrency.
-8. **Secrets Manager rotation broke the app.** Apps cache credentials too long. Use the SDK cache with a small TTL, or add a reconnect-on-auth-error retry. RDS Proxy also handles rotation without app awareness.
+### Interview Q&A
 
----
+1. **Prometheus on EKS vs AMP — which?**
+   > AMP if your Prometheus is starting to need operational care (OOMs, PVC tuning, HA). Keeps PromQL + remote_write-compatible — minimal app change. OSS Prometheus if the cluster is small and you want full control, or if you need features AMP doesn't support yet.
 
-## STAR Stories
+2. **How do you alert on an ERROR log line in CloudWatch?**
+   > Create a **metric filter** on the log group with pattern `?ERROR` → emits a metric. Create a CloudWatch Alarm on that metric (`Sum > 5 in 5m`) → SNS → Slack. No polling, no custom code.
 
-### Story 1 — The $4K NAT Gateway Bill
+3. **What's Embedded Metric Format (EMF)?**
+   > A log format where structured JSON embeds metric definitions. CloudWatch auto-extracts them as metrics at ingestion. Cheaper than PutMetricData for high-cardinality custom metrics.
 
-**Situation.** A staging EKS cluster racked up $4k in NAT GW data-processing charges in one month.
+4. **CloudWatch Logs vs Loki — tradeoffs?**
+   > CloudWatch: zero-ops, integrates with every AWS service, pay per GB ingested + stored + queried. Loki: cheaper at high scale (indexes labels only, logs in S3), OSS, Grafana-native. For most workloads, CloudWatch wins on ops simplicity; at petabyte scale Loki wins on cost.
 
-**Task.** Diagnose and cut the bill to reasonable levels without blocking developer workflows.
-
-**Action.** CloudWatch metrics on the NAT GW showed `BytesOutToDestination` dominated by S3 endpoints. Pulled a sample of Flow Logs into Athena; top destinations were S3 + ECR image pulls. Added an **S3 Gateway Endpoint** (free) and **ECR Interface Endpoints** (Docker API + token + DKR) with a VPC endpoint policy scoping to our accounts' repos. Re-routed private subnets to the new endpoints.
-
-**Result.** NAT GW data processing dropped 92% the next month. Total monthly spend fell by ~$3.7k. Added Cost Anomaly Detection + tag-based budgets so future spikes page the team. Generalized the pattern into a module for every new VPC.
-
-### Story 2 — Confused Deputy Near-Miss
-
-**Situation.** A vendor integration used a role with trust policy `{"Principal": {"AWS": "arn:aws:iam::VENDOR_ACCT:root"}}` and no External ID.
-
-**Task.** The vendor was onboarding a new customer with the same role ARN template — risk of accidentally using their creds against our account.
-
-**Action.** Rotated the trust policy to include `Condition.StringEquals.sts:ExternalId = "<unique-per-customer>"` shared only out-of-band with our account. Added `aws:SourceAccount` and `aws:SourceArn` conditions for services invoking the role. Generated a short Jira runbook for future vendor onboarding ("no role without External ID").
-
-**Result.** Eliminated the confused-deputy exposure. All downstream vendor roles audited and 3 others fixed the same way. Made External ID enforcement an SCP-enforced rule across the org.
-
-### Story 3 — S3 Public Bucket Drill
-
-**Situation.** A weekly scan flagged an S3 bucket in dev as world-readable after a developer turned off Block Public Access for a temporary test.
-
-**Task.** Contain the exposure, confirm no data left the bucket, and prevent recurrence.
-
-**Action.** Re-enabled BPA at account **and** bucket level. Parsed CloudTrail data events + S3 server access logs for `GetObject` from external IPs in the exposure window — none found (bucket only had test fixtures). Enabled "Bucket owner enforced" on every bucket in the org to disable ACLs. Rolled out an SCP that denies `s3:PutAccountPublicAccessBlock` with `RestrictPublicBuckets=false`. Added AWS Config rule for continuous detection + Access Analyzer for proactive findings.
-
-**Result.** Zero data leaked; MTTR ~15 min after initial alert. Locked door closed by guardrail: the SCP prevents the same misconfiguration in every account going forward. Drill converted into a gameday runbook.
-
-### Story 4 — Cross-Account IRSA
-
-**Situation.** Flask app on EKS in Account A needed to write to DynamoDB in Account B.
-
-**Task.** Do this without long-lived keys or overly broad roles, with a clean audit trail.
-
-**Action.** Account A: IRSA role trusted the cluster's OIDC provider for a specific ServiceAccount. That role had `sts:AssumeRole` permission on a target role in Account B. Account B: role with DynamoDB PutItem on the specific table, trust policy allowing the Account-A role ARN. Pod picks up IRSA creds via the projected token, then chains via `sts:AssumeRole` to Account B before writing.
-
-**Result.** No static secrets anywhere. CloudTrail in both accounts shows the assume-role and PutItem with the pod's SA as the trail's `userIdentity`. Same pattern reused for two more app → data-account integrations.
+5. **How do you get a p99 latency SLI on a Flask endpoint?**
+   > Histogram metric `flask_http_request_duration_seconds_bucket` from `prometheus-flask-exporter`. In PromQL: `histogram_quantile(0.99, sum by (le) (rate(flask_http_request_duration_seconds_bucket[5m])))`. Alarm when that exceeds your SLO target.
 
 ---
 
-## Production Hardening — Well-Architected Mapping
+## Service 10: KMS
 
-| Pillar | Key practices for this project, if deployed |
-|--------|--------------------------------------------|
-| **Operational Excellence** | Everything IaC (Terraform + Helm + ArgoCD). CloudWatch dashboards + synthetic probes. Runbooks. GitOps audit trail. |
-| **Security** | Multi-account (Organizations + Control Tower). IAM Identity Center SSO. IRSA for EKS. KMS with CMK for all data. Secrets Manager with rotation. GuardDuty + Security Hub + Config. SCP guardrails. Block Public Access org-wide. CloudTrail to immutable S3 + Glue catalog. |
-| **Reliability** | Multi-AZ RDS/Aurora. Multi-AZ NAT. ALB health checks + auto-scaling. Backups + AWS Backup policies. DR runbook (pilot light → warm standby). Chaos gameday. |
-| **Performance** | Right-size via Compute Optimizer. Graviton where possible. DAX / ElastiCache for hot reads. CloudFront for static assets. |
-| **Cost** | Savings Plans for steady-state. Spot for CI/stateless. VPC endpoints to kill NAT egress. S3 lifecycle + Intelligent-Tiering. Budgets + Cost Anomaly Detection. Required tags enforced via SCP. |
-| **Sustainability** | Graviton, Spot, smaller regions closer to users, managed services that pack better than self-run. |
+### What it is
+
+**Key Management Service** — AWS's hardware-backed encryption key manager. Keys never leave FIPS 140-2 validated HSMs.
+
+### Why every other service on this list touches KMS
+
+- RDS storage encrypted with a CMK
+- Secrets Manager secrets encrypted with a CMK
+- S3 SSE-KMS
+- EBS volumes on EKS nodes encrypted with a CMK
+- CloudWatch Logs can be encrypted with a CMK
+
+KMS is the encryption thread that runs through every other service. Worth 10 minutes of interview time in isolation.
+
+### Key concepts you must know
+
+**1. Envelope encryption — why KMS is efficient.**
+
+```
+plaintext ──encrypt with DEK──► ciphertext (stored alongside encrypted DEK)
+DEK       ──encrypt with CMK──► encrypted DEK (stored with ciphertext)
+CMK stays in HSM. Never exported.
+```
+
+Your app asks KMS to generate a data key → KMS returns `(plaintext DEK, encrypted DEK)` → your app encrypts bytes with the plaintext DEK, stores ciphertext + encrypted DEK, discards the plaintext DEK. Later: send encrypted DEK back to KMS → get plaintext DEK → decrypt data → discard.
+
+The CMK is never used on the data directly. KMS can handle millions of small DEK generate/decrypt requests cheaply.
+
+**2. Key types.**
+
+| Type | Control | Use |
+|------|---------|-----|
+| AWS-owned | AWS manages | Default encryption for some services; you don't see it |
+| AWS-managed (`aws/rds`, `aws/s3`) | AWS rotates annually; you see it, can't delete | Quick win |
+| **Customer-managed (CMK)** | You control — policy, rotation, deletion | Compliance, audit, cross-account |
+
+For production, use CMKs. They cost $1/key/month.
+
+**3. Key policy vs IAM.**
+Unlike most resources, KMS **requires** an explicit Allow in the key policy for any principal — IAM alone isn't enough. This is the #1 cause of "AccessDenied" surprises. Pattern: grant IAM principals a statement in the key policy:
+
+```json
+{
+  "Sid": "AllowApplicationUse",
+  "Effect": "Allow",
+  "Principal": { "AWS": "arn:aws:iam::<acct>:role/flask-app" },
+  "Action": ["kms:Decrypt", "kms:GenerateDataKey"],
+  "Resource": "*"
+}
+```
+
+**4. Grants.**
+Programmatic, time-limited, scoped permissions. Used when one AWS service needs to use your CMK on your behalf (e.g., EBS attaching a volume to an instance). You don't create grants manually often; services create them.
+
+**5. Key rotation.**
+- AWS-managed: automatic yearly.
+- CMK: opt-in automatic yearly, OR manual (create new CMK, update alias).
+
+Aliases (`alias/rds-key`) let you point at a CMK without hardcoding the ARN — useful for rotation.
+
+### How you'd implement it for this project
+
+**One CMK per purpose** (scoped blast radius):
+
+```hcl
+resource "aws_kms_key" "rds" {
+  description         = "RDS storage encryption"
+  enable_key_rotation = true
+  policy              = data.aws_iam_policy_document.kms_rds.json
+}
+resource "aws_kms_alias" "rds" {
+  name          = "alias/rds-${var.project_name}"
+  target_key_id = aws_kms_key.rds.key_id
+}
+
+# Separate keys for secrets / s3 / ebs:
+resource "aws_kms_key" "secrets" { description = "Secrets Manager encryption" enable_key_rotation = true }
+resource "aws_kms_key" "s3"      { description = "S3 SSE-KMS"                 enable_key_rotation = true }
+resource "aws_kms_key" "ebs"     { description = "EBS volume encryption"      enable_key_rotation = true }
+```
+
+**Key policy example** (RDS key — allows the IRSA role for ESO + the RDS service):
+
+```hcl
+data "aws_iam_policy_document" "kms_rds" {
+  statement {
+    sid       = "Root"
+    actions   = ["kms:*"]
+    resources = ["*"]
+    principals { type = "AWS" identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"] }
+  }
+  statement {
+    sid       = "RDS"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
+    resources = ["*"]
+    principals { type = "Service" identifiers = ["rds.amazonaws.com"] }
+  }
+  statement {
+    sid       = "ESO"
+    actions   = ["kms:Decrypt"]
+    resources = ["*"]
+    principals { type = "AWS" identifiers = [aws_iam_role.eso.arn] }
+  }
+}
+```
+
+### Gotchas
+
+- **Key policy MUST grant the root user `kms:*`.** If you lock it out, only AWS Support can recover the key. Always include the root statement.
+- **"AccessDenied" on GetObject from an SSE-KMS bucket.** You need `s3:GetObject` AND `kms:Decrypt` on the CMK. IAM alone isn't enough.
+- **Encryption-in-place isn't a thing.** You can't "encrypt an existing unencrypted RDS." You create an encrypted snapshot and restore to a new instance.
+- **Scheduled key deletion is 7-30 days.** If you delete a key with live data encrypted by it, you have that window to undo. Never shorten it for "real" keys.
+- **Cross-region KMS calls cost latency.** Encrypt in the same region as the data. For cross-region S3 replication use multi-region KMS keys.
+
+### Interview Q&A
+
+1. **Explain envelope encryption.**
+   > Data encrypted with a Data Encryption Key. DEK encrypted with a Customer Master Key in KMS. CMK never leaves HSM. Scales because CMK operations happen only once per object, not per byte.
+
+2. **My user has `s3:*` in IAM but GetObject on an SSE-KMS bucket fails. Why?**
+   > The user also needs `kms:Decrypt` permission on the CMK **and** the CMK's key policy must grant that user access. IAM on KMS is two-sided.
+
+3. **What's a KMS grant, and when is it used?**
+   > A lightweight, programmatic, time-limited permission. Used when an AWS service needs to use your CMK on your behalf — e.g., EBS creates a grant so a specific EC2 can attach an encrypted volume. You rarely create grants manually.
+
+4. **How do you rotate a CMK?**
+   > Automatic rotation: `enable_key_rotation = true` — AWS rotates the backing key material annually, transparently. Manual rotation: create a new CMK, update the alias, re-encrypt data (for data stored in S3/RDS that was encrypted with the old key — new encryption uses the alias → new key; old data stays readable until re-encrypted).
+
+5. **Why would you use separate CMKs per service (RDS / S3 / Secrets) instead of one?**
+   > Blast radius. If the RDS CMK policy is misconfigured and exposes it, only RDS is compromised, not S3 data. Also: per-service CloudTrail attribution makes auditing much easier.
 
 ---
 
-## Mapping This Project to AWS
+## End-to-End Architecture
 
-| Module / component | Minikube (current) | AWS-native counterpart |
-|--------------------|---------------------|------------------------|
-| Flask + Postgres app | Deployments on minikube | ECS/Fargate or EKS + RDS/Aurora |
-| Ingress | Minikube nginx | ALB via AWS Load Balancer Controller |
-| Persistent storage | Minikube hostpath PVCs | EBS CSI / EFS CSI |
-| Secrets | Vault + ESO | Secrets Manager + ESO (or Secrets Store CSI Driver) |
-| CI pipeline | GitHub Actions self-hosted | Same, + OIDC to AWS + ECR push |
-| Image registry | DockerHub | **ECR** with scanning + lifecycle |
-| DNS | `/etc/hosts` | **Route 53 private hosted zone** |
-| TLS | None in dev | **ACM** on ALB + CloudFront |
-| Observability | Prometheus/Grafana/Loki | **AMP + AMG + CloudWatch Logs**, or keep OSS on EKS |
-| Alerts | Alertmanager → Slack | Same, or CloudWatch Alarms → SNS → Slack |
-| Cluster | Minikube 3-node | **EKS** + managed node groups + Karpenter |
-| GitOps | ArgoCD | Same on EKS; optional AWS CodePipeline for CodeCommit source |
-| Network CIDRs (terraform/) | 10.0.0.0/16 with tiered subnets | Ported as-is; add VPC endpoints, flow logs, NAT per AZ |
-| IAM | K8s RBAC | **IRSA** bridging K8s SA → AWS IAM role |
-| Compliance | Manual | Config + Security Hub + SCPs + CloudTrail org trail |
+Here's the whole project on AWS, put together:
 
-**Migration sequence if we had to deploy this for real:**
-1. Land the accounts with Control Tower (Mgmt / Audit / LogArchive / Prod / Staging / Dev).
-2. Provision core network (VPC + subnets + endpoints + TGW-ready) with Terraform — reuse `terraform/` as the base.
-3. Push images to ECR from CI.
-4. Stand up EKS with managed node groups + Karpenter; install AWS LB Controller, EBS CSI, External DNS, cert-manager, ESO (pointed at Secrets Manager).
-5. Port Helm charts as-is (they're cloud-agnostic) — swap storage classes and Ingress classes.
-6. Cut over DNS via Route 53 with weighted records; watch dashboards; roll back in one step if needed.
+```
+                    INTERNET
+                       │
+                       ▼
+                  ┌─────────┐        ┌───────────┐
+                  │Route 53 │        │    WAF    │   (optional)
+                  └────┬────┘        └─────┬─────┘
+                       │                   │
+                       ▼                   ▼
+                  ┌───────────────────────────┐
+                  │    ALB (443, ACM cert)   │   in public subnets
+                  └────────────┬──────────────┘
+                               │ target-type: ip
+┌──────────── VPC 10.0.0.0/16 ─────────────────────────────────────────────────┐
+│                              │                                               │
+│  PRIVATE APP SUBNETS (2 AZs, 10.0.1.0/24 + 10.0.11.0/24)                    │
+│  ┌─────────────────────────────────────────────────────────────────┐        │
+│  │ EKS worker nodes (managed node group + Karpenter)               │        │
+│  │                                                                  │        │
+│  │  ┌─────────────────┐   ┌─────────────────┐  ┌────────────────┐  │        │
+│  │  │ flask-api pod   │   │ flask-api pod   │  │ flask-api pod  │  │        │
+│  │  │ (from ECR)      │   │                 │  │                │  │        │
+│  │  │ IRSA: reads     │   │                 │  │                │  │        │
+│  │  │ Secrets Manager │   │                 │  │                │  │        │
+│  │  └────┬────────────┘   └─────────────────┘  └────────────────┘  │        │
+│  │       │                                                          │        │
+│  │       │ pod IP → RDS SG                                          │        │
+│  └───────┼──────────────────────────────────────────────────────────┘        │
+│          │                                                                    │
+│          ▼                                                                    │
+│  DB SUBNETS (isolated, no 0.0.0.0/0 route, 10.0.2.0/24 + 10.0.12.0/24)      │
+│  ┌───────────────────────────────────────────────┐                           │
+│  │ RDS Postgres (Multi-AZ, encrypted via KMS)   │                           │
+│  │  writer(az-a) ←sync→ standby(az-b)           │                           │
+│  └───────────────────────────────────────────────┘                           │
+│                                                                               │
+│  DEPENDENT SERVICES SUBNETS (ESO pod, ArgoCD, etc.)                          │
+│  OBSERVABILITY SUBNETS (Prometheus/Grafana/Loki — or AMP/AMG off-cluster)    │
+│                                                                               │
+│  VPC ENDPOINTS: S3 (gateway), ECR api+dkr, Secrets Manager, STS, Logs        │
+└───────────────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ (outside VPC, reached via endpoints)
+      ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌──────┐  ┌───────┐
+      │   ECR   │  │ Secrets │  │   S3    │  │ KMS  │  │ CloudW│
+      │(images) │  │ Manager │  │(state + │  │(CMKs)│  │ atch  │
+      │         │  │(db pass)│  │ logs)   │  │      │  │(logs) │
+      └─────────┘  └─────────┘  └─────────┘  └──────┘  └───────┘
+
+   CI (GitHub Actions):                    GitOps (ArgoCD in-cluster):
+   push → OIDC to IAM role →               watches helm/ + argocd/ dirs on main →
+   docker build → push to ECR →            sync to cluster → Flask pods get new image
+   sed image tag in values.yaml → git push
+```
 
 ---
 
-## Further Reading
+## 90-Day Implementation Roadmap
 
-- [AWS Well-Architected Framework](https://docs.aws.amazon.com/wellarchitected/)
-- [AWS Security Reference Architecture](https://docs.aws.amazon.com/prescriptive-guidance/latest/security-reference-architecture/)
-- [EKS Best Practices Guides](https://aws.github.io/aws-eks-best-practices/)
-- [Prescriptive Guidance — Patterns](https://aws.amazon.com/prescriptive-guidance/)
-- [AWS Pricing Calculator](https://calculator.aws/)
+If you ever want to actually deploy this to AWS, here's the order that keeps each step shippable:
+
+**Week 1–2: Foundation**
+- [ ] Create AWS account, enable MFA on root, configure Identity Center (SSO)
+- [ ] Bootstrap S3 bucket + DynamoDB for Terraform state
+- [ ] Deploy your existing `terraform/` (VPC, subnets, NAT, SGs) — no changes needed
+- [ ] Add VPC endpoints (S3, ECR, STS, Secrets Manager)
+- [ ] Set up CloudTrail org-wide → S3
+
+**Week 3–4: Container platform**
+- [ ] Create ECR repos (flask-app, etc.) with lifecycle policies
+- [ ] Wire GitHub Actions OIDC → IAM role → push to ECR (replaces DockerHub step)
+- [ ] Provision EKS cluster (1 system node group) via `terraform-aws-modules/eks`
+- [ ] Install add-ons: VPC CNI, CoreDNS, kube-proxy, EBS CSI
+- [ ] Install AWS Load Balancer Controller (IRSA)
+- [ ] Install Karpenter for autoscaling
+
+**Week 5–6: Data + secrets**
+- [ ] Provision RDS Postgres (Multi-AZ, encrypted)
+- [ ] Migrate data from in-cluster Postgres to RDS (`pg_dump` | `psql`)
+- [ ] Create Secrets Manager entries for DB creds
+- [ ] Install External Secrets Operator with IRSA, point at Secrets Manager
+- [ ] Retire in-cluster Postgres + Vault (keep them in a different ns during cutover)
+
+**Week 7–8: Exposure**
+- [ ] Register domain / set up Route 53 hosted zone
+- [ ] Request ACM cert (DNS-validated)
+- [ ] Install ExternalDNS → auto-creates Route 53 records
+- [ ] Update Flask Ingress with ALB annotations → `api.example.com` live
+
+**Week 9–10: Observability**
+- [ ] Install CloudWatch Container Insights add-on
+- [ ] Fluent Bit → CloudWatch Logs for centralized app logs
+- [ ] Migrate Prometheus to AMP (remote_write)
+- [ ] Migrate Grafana to AMG, re-point dashboards
+- [ ] Alertmanager → SNS → Slack via AWS Chatbot
+
+**Week 11–12: Production hardening**
+- [ ] Enable GuardDuty + Security Hub
+- [ ] AWS Config rules: RDS encryption, S3 public access, root MFA
+- [ ] Backup plan via AWS Backup across RDS/EBS/EFS
+- [ ] Run a chaos gameday — kill a node, drop an AZ, restore from RDS snapshot
+- [ ] Load test with Locust — tune HPA + RDS Proxy + ALB deregistration
+
+**Ongoing: Cost & governance**
+- [ ] Cost Explorer + Budgets per tag
+- [ ] Savings Plans commitment for steady-state
+- [ ] Spot instances for Karpenter-provisioned nodes (stateless workloads)
+
+---
+
+## Cost Estimate
+
+Rough monthly spend if this project runs in AWS with light traffic:
+
+| Service | Config | Est. $/mo |
+|---------|--------|-----------|
+| EKS control plane | 1 cluster | $73 |
+| EC2 (2× t3.medium nodes, on-demand) | baseline | $60 |
+| EC2 via Karpenter (bursty, spot) | avg 1× t3.medium | ~$10 |
+| RDS Postgres (db.t3.medium, Multi-AZ, 20GB gp3) | | ~$110 |
+| ALB | 1 shared ALB, low traffic | ~$20 |
+| NAT Gateway | 2 × $0.045/hr + minimal data | ~$70 |
+| ECR | <10 GB | ~$1 |
+| Secrets Manager | 5 secrets | ~$2 |
+| CloudWatch Logs | 10 GB ingested, 14d retention | ~$5 |
+| Route 53 | 1 hosted zone | $0.50 |
+| ACM | Public certs | Free |
+| S3 | 10 GB state + logs | ~$1 |
+| Data transfer / egress | low | ~$10 |
+| **Total** | | **~$360/mo** |
+
+**Cost reduction levers (in priority order):**
+1. Kill the NAT GW. Use Karpenter + spot + VPC endpoints — move to **single NAT in dev**, still multi-NAT in prod. Saves ~$40/mo.
+2. Use Aurora Serverless v2 instead of RDS if traffic is bursty. Scales to zero ACUs idle.
+3. Move nodes to **Spot** via Karpenter for non-prod. 70% discount. Saves ~$40/mo.
+4. **1-year Compute Savings Plan** for the steady-state baseline — ~30% off.
+5. S3 lifecycle on log bucket — transitions to Glacier for old logs.
+
+Realistic target after optimizations: **~$200–230/mo** for a personal project that's actually running.
+
+---
+
+*That's the whole thing — 10 services, mapped to your project, deep enough to implement, tight enough to explain in an interview.*
