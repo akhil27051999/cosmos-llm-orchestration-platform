@@ -32,9 +32,10 @@ Each service section follows the same structure so you can drill on it:
 9. [Service 8: S3](#service-8-s3) — Terraform state + backups
 10. [Service 9: CloudWatch + AMP/AMG](#service-9-cloudwatch--ampamg) — observability on AWS
 11. [Service 10: KMS](#service-10-kms) — the encryption thread
-12. [End-to-End Architecture](#end-to-end-architecture)
-13. [90-Day Implementation Roadmap](#90-day-implementation-roadmap)
-14. [Cost Estimate](#cost-estimate)
+12. [Service 11: AWS CI/CD (CodePipeline / CodeBuild / CodeDeploy)](#service-11-aws-cicd) — the native alternative to GitHub Actions
+13. [End-to-End Architecture](#end-to-end-architecture)
+14. [90-Day Implementation Roadmap](#90-day-implementation-roadmap)
+15. [Cost Estimate](#cost-estimate)
 
 ---
 
@@ -1528,6 +1529,278 @@ data "aws_iam_policy_document" "kms_rds" {
 
 5. **Why would you use separate CMKs per service (RDS / S3 / Secrets) instead of one?**
    > Blast radius. If the RDS CMK policy is misconfigured and exposes it, only RDS is compromised, not S3 data. Also: per-service CloudTrail attribution makes auditing much easier.
+
+---
+
+## Service 11: AWS CI/CD
+
+### What it is
+
+AWS has its own end-to-end CI/CD stack — five separate services you compose into a pipeline:
+
+| Service | Role | Analogous to |
+|---------|------|--------------|
+| **CodePipeline** | Orchestrator — defines stages, triggers, approvals | GitHub Actions workflow |
+| **CodeBuild** | Runs builds in a managed container (Docker, shell, tests) | GitHub Actions runner (`ubuntu-latest`) |
+| **CodeDeploy** | Deploys to EC2 / ECS / Lambda with blue/green + canary | Argo Rollouts, Spinnaker |
+| **CodeArtifact** | Private package registry (npm, pip, maven) | GitHub Packages, Artifactory |
+| **CodeStar Connections** | Secure link from AWS → GitHub / Bitbucket / GitLab | GitHub App |
+
+**One service is NOT recommended in 2025:** **CodeCommit** (AWS's Git hosting). AWS stopped accepting new CodeCommit customers in 2024. Use GitHub / GitLab.
+
+### Your project today uses GitHub Actions + ArgoCD; on AWS you have three patterns
+
+**Pattern A — Keep everything you have (RECOMMENDED for your project):**
+```
+GitHub → GitHub Actions (OIDC to AWS) → ECR → ArgoCD in EKS → pods
+```
+You already do this. Zero AWS CI services needed. GitHub Actions is fine, ArgoCD is best-in-class for K8s GitOps. AWS OIDC gives you IAM-backed auth with no long-lived keys.
+
+**Pattern B — Full AWS-native:**
+```
+GitHub → CodeStar Connection → CodePipeline → CodeBuild (tests + docker build)
+       → ECR → CodeDeploy (EKS / ECS / EC2) → running app
+```
+Good fit if: org mandates "everything in AWS," you want CloudWatch-integrated pipeline metrics, or you're deploying to ECS/EC2/Lambda (where ArgoCD doesn't fit).
+
+**Pattern C — Hybrid (GitHub for CI, AWS for CD):**
+```
+GitHub Actions → ECR → CodeDeploy (for ECS/Lambda) or ArgoCD (for EKS)
+```
+Useful when: the deploy target isn't Kubernetes. CodeDeploy's blue/green for ECS/EC2 is genuinely good.
+
+**Bottom line for your project:** Pattern A. You'd mention AWS CI/CD in an interview to show you know the landscape, not because you need it.
+
+### Key concepts you must know
+
+**1. CodePipeline stages, actions, artifacts.**
+
+A pipeline is a sequence of **stages** (Source, Build, Test, Deploy). Each stage has one or more **actions** (parallel or sequential). Actions pass **artifacts** (a zip file in S3) between them.
+
+```
+┌── Source ──┐    ┌── Build ─────┐    ┌── Test ────┐    ┌── Deploy ───┐
+│ GitHub     │ →  │ CodeBuild    │ →  │ CodeBuild  │ →  │ CodeDeploy  │
+│ (webhook)  │    │ docker build │    │ pytest     │    │ ECS/EKS/EC2 │
+│            │    │ push to ECR  │    │ locust     │    │             │
+└────────────┘    └──────────────┘    └────────────┘    └─────────────┘
+   artifact:           artifact:          artifact:
+   source.zip          imagedefs.json     test-report
+```
+
+Artifacts live in an S3 bucket (the "artifact store"). A failed stage blocks the pipeline.
+
+**2. CodeBuild project — a `buildspec.yml` in your repo.**
+
+```yaml
+# buildspec.yml — CodeBuild reads this from the repo root
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+      - export IMAGE_TAG=${CODEBUILD_RESOLVED_SOURCE_VERSION:0:7}
+  build:
+    commands:
+      - docker build -t $ECR_REGISTRY/flask-app:$IMAGE_TAG .
+      - docker push $ECR_REGISTRY/flask-app:$IMAGE_TAG
+  post_build:
+    commands:
+      - printf '[{"name":"flask-app","imageUri":"%s"}]' "$ECR_REGISTRY/flask-app:$IMAGE_TAG" > imagedefinitions.json
+
+artifacts:
+  files: imagedefinitions.json
+```
+
+CodeBuild is analogous to a GitHub Actions job. It provisions a container from a managed image (`aws/codebuild/amazonlinux2-x86_64-standard:5.0`), runs your phases, uploads artifacts to S3.
+
+**3. CodeDeploy deployment types.**
+
+| Target | Strategies |
+|--------|-----------|
+| **EC2/On-Prem** | In-place, Blue/Green (via ASG swap) |
+| **ECS** | Blue/Green (two task sets, ALB weight shift) |
+| **Lambda** | Canary (10% then 100%), Linear (10% every N min), All-at-once |
+| **EKS** | No native support — use ArgoCD / Argo Rollouts / Flux instead |
+
+For EKS, **AWS does not recommend** CodeDeploy. Every serious EKS shop uses a K8s-native CD (ArgoCD, Flux, Argo Rollouts). You already picked the right tool.
+
+**4. CodeBuild compute types + billing.**
+Billed per minute of runtime. Smallest (`general1.small`, 3 GB RAM, 2 vCPU) is ~$0.005/min. A typical 5-minute CI job costs ~$0.025. At high commit frequency this adds up — usually still cheaper than self-hosted runners, though.
+
+**5. Approvals in CodePipeline.**
+Add a **Manual Approval** action before Deploy → pipeline pauses, sends SNS notification, waits for a human to click Approve in the console or via API. Common for prod gates.
+
+### How you'd implement it for this project
+
+**Pattern A (current) — no AWS CI services**, but worth hardening your GitHub Actions → AWS integration:
+
+- OIDC federation for GitHub Actions → IAM role (covered in Service 3).
+- Short-lived STS credentials, no access keys.
+- Environments + protection rules on `production` (required reviewers).
+
+**Pattern B (full AWS-native) — here's how it'd look:**
+
+```hcl
+# Terraform — CodeBuild project that builds + pushes to ECR
+resource "aws_iam_role" "codebuild" {
+  name               = "flask-app-codebuild"
+  assume_role_policy = data.aws_iam_policy_document.codebuild_assume.json
+}
+
+resource "aws_iam_role_policy" "codebuild" {
+  role = aws_iam_role.codebuild.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      { Effect = "Allow", Action = ["ecr:GetAuthorizationToken", "ecr:BatchCheckLayerAvailability", "ecr:PutImage", "ecr:InitiateLayerUpload", "ecr:UploadLayerPart", "ecr:CompleteLayerUpload"], Resource = "*" },
+      { Effect = "Allow", Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"], Resource = "*" },
+      { Effect = "Allow", Action = ["s3:*"], Resource = "${aws_s3_bucket.codepipeline.arn}/*" }
+    ]
+  })
+}
+
+resource "aws_codebuild_project" "flask_app" {
+  name         = "flask-app-build"
+  service_role = aws_iam_role.codebuild.arn
+
+  artifacts { type = "CODEPIPELINE" }
+
+  environment {
+    compute_type    = "BUILD_GENERAL1_SMALL"
+    image           = "aws/codebuild/amazonlinux2-x86_64-standard:5.0"
+    type            = "LINUX_CONTAINER"
+    privileged_mode = true   # needed for `docker build`
+    environment_variable { name = "AWS_REGION"    value = var.aws_region }
+    environment_variable { name = "ECR_REGISTRY"  value = aws_ecr_repository.flask_app.repository_url }
+  }
+
+  source { type = "CODEPIPELINE" buildspec = "buildspec.yml" }
+}
+```
+
+**CodePipeline definition:**
+
+```hcl
+resource "aws_codepipeline" "flask_app" {
+  name     = "flask-app-pipeline"
+  role_arn = aws_iam_role.codepipeline.arn
+
+  artifact_store {
+    location = aws_s3_bucket.codepipeline.bucket
+    type     = "S3"
+  }
+
+  stage {
+    name = "Source"
+    action {
+      name             = "GitHub"
+      category         = "Source"
+      owner            = "AWS"
+      provider         = "CodeStarSourceConnection"
+      version          = "1"
+      output_artifacts = ["source_output"]
+      configuration = {
+        ConnectionArn    = aws_codestarconnections_connection.github.arn
+        FullRepositoryId = "akhil27051999/Flask-REST-API"
+        BranchName       = "main"
+      }
+    }
+  }
+
+  stage {
+    name = "Build"
+    action {
+      name             = "DockerBuild"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      version          = "1"
+      input_artifacts  = ["source_output"]
+      output_artifacts = ["build_output"]
+      configuration    = { ProjectName = aws_codebuild_project.flask_app.name }
+    }
+  }
+
+  stage {
+    name = "Approve"
+    action {
+      name     = "ManualApproval"
+      category = "Approval"
+      owner    = "AWS"
+      provider = "Manual"
+      version  = "1"
+      configuration = { NotificationArn = aws_sns_topic.pipeline_approvals.arn }
+    }
+  }
+
+  stage {
+    name = "Deploy"
+    action {
+      name            = "UpdateHelmValues"
+      category        = "Build"                 # CodeBuild running `sed` + `git push` to GitOps repo
+      owner           = "AWS"
+      provider        = "CodeBuild"
+      version         = "1"
+      input_artifacts = ["build_output"]
+      configuration   = { ProjectName = aws_codebuild_project.update_helm.name }
+    }
+  }
+}
+```
+
+Note even in Pattern B, the deploy to EKS still goes via **Git push → ArgoCD** — CodePipeline just replaces the "run sed and push" step. Pure CodeDeploy-to-EKS doesn't exist.
+
+**Pattern C (hybrid) example — use when you add an ECS service** alongside your EKS workloads:
+
+```
+GitHub Actions → build + test + push to ECR
+       │
+       ▼
+EventBridge rule (on ECR push)
+       │
+       ▼
+CodePipeline (Source: ECR) → CodeDeploy Blue/Green (ECS)
+```
+
+ECR push is the trigger. CodeDeploy's ECS blue/green is genuinely nice — it runs two task sets simultaneously, shifts ALB weight, auto-rollback on CloudWatch alarm.
+
+### Gotchas
+
+- **CodeBuild needs `privileged_mode = true`** to do `docker build` inside the container. Easy to forget; errors are opaque.
+- **CodePipeline artifact store is a regional S3 bucket.** One bucket per region per pipeline (can be shared). Missing bucket permissions cause `AccessDenied` on stage transitions.
+- **CodeStar Connections require manual console approval** the first time — you click through a GitHub OAuth flow. Terraform creates the resource but `PENDING` until approved.
+- **CodeBuild's default image is huge (~3 GB).** Pulls cached after first run but first runs are slow. Custom minimal images via ECR speed this up.
+- **No native parallel fan-out across stages.** CodePipeline stages are sequential. Parallelism within a stage requires multiple actions — fiddly YAML.
+- **Pipeline execution limits.** 1000 concurrent executions per pipeline by default; 20 pipelines per region. Plenty for most teams.
+- **CodeDeploy EKS** — doesn't exist as a managed option. Don't propose it.
+- **CodePipeline is NOT a drop-in GitHub Actions replacement.** GHA has reusable workflows, `matrix:`, complex `if:` expressions — CodePipeline is much simpler. Choose CodePipeline when the simplicity is a feature, not when you need rich logic.
+
+### Interview Q&A
+
+1. **You're starting a new project on AWS. Would you pick GitHub Actions or CodePipeline?**
+   > GitHub Actions almost always. Better syntax, richer ecosystem, runs on any cloud, OIDC into AWS means no credential management. CodePipeline if: regulated org mandates AWS-only, or the workflow is very AWS-service-heavy (Lambda, ECS, Step Functions) and living inside AWS reduces egress / auth friction.
+
+2. **Explain CodeDeploy's ECS blue/green.**
+   > Two task sets (blue = current, green = new) run in parallel. ALB has two target groups. CodeDeploy shifts ALB weight from blue → green in configured increments (canary 10%/90%, linear 10%-every-minute, all-at-once). CloudWatch alarms automatically trigger rollback. Blue tasks drain after green is stable for a configured period.
+
+3. **Your build needs `docker build`. How do you do that in CodeBuild?**
+   > Set `privileged_mode = true` on the CodeBuild environment — this gives the container access to the Docker socket on the host. Then `docker build` + `docker push` work. Without it, you get "Cannot connect to the Docker daemon" errors.
+
+4. **What replaces CodeCommit now that AWS has stopped accepting new customers?**
+   > Use GitHub, GitLab, or Bitbucket. Connect to AWS via **CodeStar Connections** (for CodePipeline) or **OIDC federation** (for GitHub Actions → IAM role). AWS's direction: don't host Git, integrate with the Git hosts people already use.
+
+5. **Why do teams running EKS usually NOT use CodeDeploy?**
+   > CodeDeploy has no native K8s support. K8s-native CD tools (ArgoCD, Flux, Argo Rollouts) understand Kubernetes primitives (Deployments, Services, Ingress), support the App-of-Apps pattern, use git as the source of truth. CodeDeploy predates K8s and was built for EC2/ECS/Lambda. Use the right tool for the platform.
+
+6. **How do you add a manual approval before production deploy?**
+   > CodePipeline: add a `Manual Approval` action before the Deploy stage with an SNS topic for notifications. Pipeline pauses, reviewer approves in the console or via `aws codepipeline put-approval-result`. Equivalent in GitHub Actions: `environment: production` with required reviewers in the repo settings.
+
+7. **What's CodeArtifact?**
+   > AWS's private package registry — hosts npm, pip, maven, NuGet, gem packages. Supports upstream repos (pulls from npm.js and caches). Integrates with IAM for auth. Used when you need a private package registry and want to stay inside AWS. For most teams, GitHub Packages or Artifactory is simpler.
+
+8. **Can a CodePipeline deploy to an EKS cluster?**
+   > Indirectly. The "deploy" stage runs a CodeBuild job that either (a) `kubectl apply` / `helm upgrade` directly, or (b) commits a Helm values bump to the GitOps repo that ArgoCD watches. Option (b) is GitOps-compliant — the cluster still pulls from git, CodePipeline just writes the git commit.
 
 ---
 
