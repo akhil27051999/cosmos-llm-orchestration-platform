@@ -52,29 +52,37 @@
   }
   .wrap{max-width:var(--maxw); margin:0 auto; padding:0 22px}
 
-  /* ---------- HERO ---------- */
-  .hero{position:relative; overflow:hidden; padding:64px 0 34px; text-align:center}
-  .hero .sun{
-    position:absolute; top:-190px; left:50%; transform:translateX(-50%);
-    width:520px; height:520px; border-radius:50%;
-    background:radial-gradient(circle at 50% 50%, var(--sun-glow) 0%, rgba(0,0,0,0) 62%);
-    pointer-events:none; z-index:0;
+  /* ---------- HERO (Nataraja — ring of fire) ---------- */
+  .hero{position:relative; overflow:hidden; padding:78px 0 42px; text-align:center}
+  .nebula{
+    position:absolute; top:-170px; left:50%; transform:translateX(-50%);
+    width:660px; height:440px; z-index:0; pointer-events:none;
+    background:radial-gradient(ellipse at 50% 45%, rgba(124,92,246,.20) 0%, rgba(242,145,61,.10) 34%, transparent 70%);
   }
-  .orbit{
-    position:absolute; top:-120px; left:50%; width:360px; height:360px;
-    margin-left:-180px; border-radius:50%;
-    border:1px solid var(--line); opacity:.5; z-index:0;
-    -webkit-mask-image:linear-gradient(to bottom, #000, transparent 70%);
-    mask-image:linear-gradient(to bottom, #000, transparent 70%);
+  .firering{
+    position:absolute; top:-150px; left:50%; margin-left:-215px;
+    width:430px; height:430px; border-radius:50%; z-index:0; pointer-events:none;
+    -webkit-mask-image:linear-gradient(to bottom,#000 50%, transparent 85%);
+    mask-image:linear-gradient(to bottom,#000 50%, transparent 85%);
   }
-  .orbit::after{
-    content:""; position:absolute; top:-4px; left:50%; margin-left:-4px;
-    width:8px; height:8px; border-radius:50%;
-    background:var(--accent); box-shadow:0 0 14px 3px var(--sun-glow);
-    animation:orbit 22s linear infinite;
-    transform-origin:4px 184px;
+  .firering::before{
+    content:""; position:absolute; inset:0; border-radius:50%;
+    background:conic-gradient(from 0deg, #E0431E, #F2683C, #F2913D, #EAB94C, #FFE0A6, #F2913D, #F0522A, #E0431E);
+    -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 16px), #000 calc(100% - 15px));
+    mask:radial-gradient(farthest-side, transparent calc(100% - 16px), #000 calc(100% - 15px));
+    filter:saturate(1.15) blur(.5px);
+    animation:emberspin 26s linear infinite;
   }
-  @keyframes orbit{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+  .firering::after{
+    content:""; position:absolute; inset:0; border-radius:50%;
+    background:conic-gradient(from 160deg, transparent, rgba(255,186,96,.75), transparent 42%);
+    -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 22px), #000 calc(100% - 10px));
+    mask:radial-gradient(farthest-side, transparent calc(100% - 22px), #000 calc(100% - 10px));
+    filter:blur(3px); opacity:.75;
+    animation:emberspin 8s linear infinite reverse;
+  }
+  @keyframes emberspin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion: reduce){ .firering::before,.firering::after{animation:none} }
   .hero-inner{position:relative; z-index:1}
   .eyebrow{
     font-family:var(--mono); font-size:12px; letter-spacing:.32em; text-transform:uppercase;
@@ -83,7 +91,7 @@
   .wordmark{
     font-size:clamp(46px,9vw,88px); font-weight:800; letter-spacing:-.03em;
     line-height:.92; margin:0; text-wrap:balance;
-    background:linear-gradient(180deg, var(--text) 30%, var(--accent) 165%);
+    background:linear-gradient(180deg, var(--text) 16%, var(--accent) 115%, var(--flare) 172%);
     -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
   }
   .tagline{
@@ -291,10 +299,10 @@
   <div class="wrap">
     <!-- HERO -->
     <header class="hero">
-      <div class="sun"></div>
-      <div class="orbit"></div>
+      <div class="nebula"></div>
+      <div class="firering"></div>
       <div class="hero-inner">
-        <p class="eyebrow">Cloud-Native LLM Orchestration Platform</p>
+        <p class="eyebrow">🔱 Cloud-Native LLM Orchestration Platform</p>
         <h1 class="wordmark">NATARAJA</h1>
         <p class="tagline">Your depth-first roadmap from senior DevOps engineer to Cloud Solution Architect — 14 stages, built one running increment at a time.</p>
         <div class="meta-row">
