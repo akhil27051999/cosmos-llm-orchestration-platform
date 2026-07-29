@@ -1,0 +1,594 @@
+<title>Helios — Learning Roadmap</title>
+<style>
+  :root{
+    --bg:#0F1218; --bg-2:#161B24; --bg-3:#1E2530; --bg-hi:#252E3B;
+    --line:#2A323F; --line-soft:#222A35;
+    --text:#ECEAE3; --text-dim:#9BA3B0; --text-faint:#6C7684;
+    --accent:#F2913D; --flare:#F2683C; --gold:#EAB94C;
+    --tier-deep:#F0623C; --tier-extend:#EAA53A; --tier-leverage:#3EB6A0;
+    --sun-glow:rgba(242,145,61,.28);
+    --shadow:0 10px 30px -12px rgba(0,0,0,.6);
+    --radius:14px;
+    --font:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --maxw:1120px;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#F5F1E9; --bg-2:#FFFFFF; --bg-3:#FBF8F1; --bg-hi:#F3EEE3;
+      --line:#E4DCCC; --line-soft:#EDE6D8;
+      --text:#20242B; --text-dim:#5C6472; --text-faint:#8A91A0;
+      --accent:#CF6B22; --flare:#D9542A; --gold:#B98A1E;
+      --tier-deep:#D6552A; --tier-extend:#B7841F; --tier-leverage:#1E8C78;
+      --sun-glow:rgba(207,107,34,.20);
+      --shadow:0 12px 30px -14px rgba(80,50,10,.30);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0F1218; --bg-2:#161B24; --bg-3:#1E2530; --bg-hi:#252E3B;
+    --line:#2A323F; --line-soft:#222A35;
+    --text:#ECEAE3; --text-dim:#9BA3B0; --text-faint:#6C7684;
+    --accent:#F2913D; --flare:#F2683C; --gold:#EAB94C;
+    --tier-deep:#F0623C; --tier-extend:#EAA53A; --tier-leverage:#3EB6A0;
+    --sun-glow:rgba(242,145,61,.28);
+    --shadow:0 10px 30px -12px rgba(0,0,0,.6);
+  }
+  :root[data-theme="light"]{
+    --bg:#F5F1E9; --bg-2:#FFFFFF; --bg-3:#FBF8F1; --bg-hi:#F3EEE3;
+    --line:#E4DCCC; --line-soft:#EDE6D8;
+    --text:#20242B; --text-dim:#5C6472; --text-faint:#8A91A0;
+    --accent:#CF6B22; --flare:#D9542A; --gold:#B98A1E;
+    --tier-deep:#D6552A; --tier-extend:#B7841F; --tier-leverage:#1E8C78;
+    --sun-glow:rgba(207,107,34,.20);
+    --shadow:0 12px 30px -14px rgba(80,50,10,.30);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0}
+  .page{
+    background:var(--bg); color:var(--text); font-family:var(--font);
+    min-height:100vh; line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 22px}
+
+  /* ---------- HERO ---------- */
+  .hero{position:relative; overflow:hidden; padding:64px 0 34px; text-align:center}
+  .hero .sun{
+    position:absolute; top:-190px; left:50%; transform:translateX(-50%);
+    width:520px; height:520px; border-radius:50%;
+    background:radial-gradient(circle at 50% 50%, var(--sun-glow) 0%, rgba(0,0,0,0) 62%);
+    pointer-events:none; z-index:0;
+  }
+  .orbit{
+    position:absolute; top:-120px; left:50%; width:360px; height:360px;
+    margin-left:-180px; border-radius:50%;
+    border:1px solid var(--line); opacity:.5; z-index:0;
+    -webkit-mask-image:linear-gradient(to bottom, #000, transparent 70%);
+    mask-image:linear-gradient(to bottom, #000, transparent 70%);
+  }
+  .orbit::after{
+    content:""; position:absolute; top:-4px; left:50%; margin-left:-4px;
+    width:8px; height:8px; border-radius:50%;
+    background:var(--accent); box-shadow:0 0 14px 3px var(--sun-glow);
+    animation:orbit 22s linear infinite;
+    transform-origin:4px 184px;
+  }
+  @keyframes orbit{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+  .hero-inner{position:relative; z-index:1}
+  .eyebrow{
+    font-family:var(--mono); font-size:12px; letter-spacing:.32em; text-transform:uppercase;
+    color:var(--accent); margin:0 0 14px; font-weight:600;
+  }
+  .wordmark{
+    font-size:clamp(46px,9vw,88px); font-weight:800; letter-spacing:-.03em;
+    line-height:.92; margin:0; text-wrap:balance;
+    background:linear-gradient(180deg, var(--text) 30%, var(--accent) 165%);
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  }
+  .tagline{
+    font-size:clamp(15px,2vw,19px); color:var(--text-dim); margin:16px auto 0; max-width:60ch;
+    text-wrap:balance;
+  }
+  .meta-row{
+    display:flex; flex-wrap:wrap; gap:10px 8px; justify-content:center; margin:26px 0 0;
+  }
+  .meta-chip{
+    font-family:var(--mono); font-size:12.5px; color:var(--text-dim);
+    background:var(--bg-2); border:1px solid var(--line); border-radius:999px;
+    padding:6px 13px; display:inline-flex; align-items:center; gap:7px;
+  }
+  .meta-chip b{color:var(--text); font-weight:700}
+  .meta-chip .dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+
+  /* ---------- STATUS BAR ---------- */
+  .statusbar{
+    position:sticky; top:0; z-index:20;
+    background:color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    border-top:1px solid var(--line-soft); border-bottom:1px solid var(--line-soft);
+    margin-top:22px;
+  }
+  .status-inner{
+    display:flex; align-items:center; gap:18px; padding:12px 0; flex-wrap:wrap;
+  }
+  .status-label{font-family:var(--mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--text-faint); white-space:nowrap}
+  .bar{
+    flex:1 1 220px; min-width:180px; height:9px; border-radius:999px;
+    background:var(--bg-3); overflow:hidden; position:relative;
+    border:1px solid var(--line-soft);
+  }
+  .bar-fill{
+    height:100%; width:0%; border-radius:999px;
+    background:linear-gradient(90deg, var(--gold), var(--accent) 55%, var(--flare));
+    box-shadow:0 0 12px -1px var(--sun-glow);
+    transition:width 1.1s cubic-bezier(.16,1,.3,1);
+  }
+  .pct{font-family:var(--mono); font-weight:700; font-size:15px; color:var(--text); min-width:44px; text-align:right; font-variant-numeric:tabular-nums}
+  .status-sub{font-family:var(--mono); font-size:12px; color:var(--text-dim); white-space:nowrap; font-variant-numeric:tabular-nums}
+  .status-actions{display:flex; gap:8px; margin-left:auto}
+  .btn{
+    font-family:var(--font); font-size:12.5px; color:var(--text-dim); cursor:pointer;
+    background:var(--bg-2); border:1px solid var(--line); border-radius:8px; padding:6px 11px;
+    transition:.15s;
+  }
+  .btn:hover{color:var(--text); border-color:var(--accent)}
+  .btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+  /* ---------- LEGEND ---------- */
+  .legend{display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; padding:16px 0 4px; justify-content:center}
+  .lg{display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--text-dim)}
+  .lg .sw{width:12px; height:12px; border-radius:4px}
+  .sw.deep{background:var(--tier-deep)} .sw.extend{background:var(--tier-extend)} .sw.leverage{background:var(--tier-leverage)}
+  .sw.mixed{background:linear-gradient(135deg,var(--tier-leverage),var(--tier-deep))}
+  .lg .star{color:var(--gold)}
+
+  /* ---------- TIMELINE ---------- */
+  .timeline{position:relative; padding:26px 0 60px}
+  .phase{
+    position:relative; display:grid; grid-template-columns:120px 1fr; gap:20px;
+    padding-bottom:26px;
+    opacity:0; transform:translateY(14px);
+    transition:opacity .6s ease, transform .6s cubic-bezier(.16,1,.3,1);
+  }
+  .phase.in{opacity:1; transform:none}
+  /* trunk line */
+  .rail{position:relative}
+  .rail::before{
+    content:""; position:absolute; left:15px; top:6px; bottom:-26px; width:2px;
+    background:linear-gradient(180deg, var(--line), var(--line));
+  }
+  .phase:last-child .rail::before{bottom:auto; height:20px}
+  .spine-tag .rail::before{background:linear-gradient(180deg, var(--flare), var(--accent))}
+  .node{
+    position:absolute; left:6px; top:2px; width:22px; height:22px; border-radius:50%;
+    background:var(--bg-2); border:2px solid var(--line); z-index:2;
+    display:grid; place-items:center; font-family:var(--mono); font-size:11px; font-weight:700; color:var(--text-dim);
+    transition:.2s;
+  }
+  .phase.spine-tag .node{border-color:var(--accent); color:var(--accent)}
+  .phase.anchor .node{border-color:var(--gold); color:var(--gold); box-shadow:0 0 0 4px color-mix(in srgb, var(--gold) 18%, transparent)}
+  .phase.done-all .node{background:var(--accent); border-color:var(--accent); color:#12151b}
+  .weeks-badge{
+    position:absolute; left:0; top:34px; width:118px; text-align:left; padding-left:2px;
+    font-family:var(--mono); font-size:12px; color:var(--text-faint); font-variant-numeric:tabular-nums;
+  }
+  .weeks-badge b{display:block; color:var(--text-dim); font-size:11px; letter-spacing:.14em; text-transform:uppercase; margin-bottom:2px}
+
+  .phase-body{min-width:0}
+  .phase-head{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px}
+  .phase-title{font-size:19px; font-weight:750; letter-spacing:-.01em; margin:0; color:var(--text)}
+  .phase-star{color:var(--gold); font-size:15px}
+  .phase-prog{
+    font-family:var(--mono); font-size:11.5px; color:var(--text-faint);
+    border:1px solid var(--line); border-radius:999px; padding:2px 9px; margin-left:auto;
+    font-variant-numeric:tabular-nums; white-space:nowrap;
+  }
+  .phase-prog.full{color:var(--tier-leverage); border-color:color-mix(in srgb,var(--tier-leverage) 45%,var(--line))}
+
+  /* ---------- STAGE CARD ---------- */
+  .stage{
+    background:var(--bg-2); border:1px solid var(--line); border-left:3px solid var(--tier);
+    border-radius:var(--radius); margin-bottom:12px; overflow:hidden;
+    transition:border-color .18s, transform .18s, box-shadow .18s;
+  }
+  .stage:hover{transform:translateY(-2px); box-shadow:var(--shadow)}
+  .stage.done{border-left-color:var(--accent)}
+  .stage.done .st-title{color:var(--text-dim)}
+  .stage.open{box-shadow:var(--shadow)}
+  .st-head{display:flex; align-items:flex-start; gap:14px; padding:15px 16px; cursor:pointer}
+  .check{
+    flex:none; width:24px; height:24px; margin-top:1px; border-radius:7px;
+    border:2px solid var(--line); background:var(--bg-3); cursor:pointer;
+    display:grid; place-items:center; color:transparent; transition:.15s;
+  }
+  .check:hover{border-color:var(--accent)}
+  .check:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .stage.done .check{background:var(--accent); border-color:var(--accent); color:#12151b}
+  .check svg{width:14px; height:14px}
+  .st-main{flex:1; min-width:0}
+  .st-line1{display:flex; align-items:center; gap:9px; flex-wrap:wrap}
+  .st-id{font-family:var(--mono); font-size:12px; font-weight:700; color:var(--accent)}
+  .st-wk{font-family:var(--mono); font-size:11px; color:var(--text-faint); font-variant-numeric:tabular-nums}
+  .tier-chip{
+    font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase;
+    padding:2px 7px; border-radius:999px; font-weight:700;
+    color:var(--tier); border:1px solid color-mix(in srgb, var(--tier) 40%, transparent);
+    background:color-mix(in srgb, var(--tier) 12%, transparent);
+  }
+  .anchor-badge{font-size:11px; color:var(--gold); font-family:var(--mono); font-weight:700}
+  .st-title{font-size:15.5px; font-weight:700; margin:5px 0 3px; color:var(--text); letter-spacing:-.01em}
+  .st-sum{font-size:13.5px; color:var(--text-dim); margin:0}
+  .chev{flex:none; color:var(--text-faint); transition:transform .22s; margin-top:3px}
+  .stage.open .chev{transform:rotate(180deg)}
+
+  .st-detail{
+    display:grid; grid-template-rows:0fr; transition:grid-template-rows .28s ease;
+  }
+  .stage.open .st-detail{grid-template-rows:1fr}
+  .st-detail-inner{overflow:hidden}
+  .detail-pad{padding:2px 16px 18px 54px; border-top:1px solid var(--line-soft)}
+  .dsec{margin-top:14px}
+  .dsec-h{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--text-faint); margin:0 0 7px; display:flex; align-items:center; gap:7px;
+  }
+  .dsec-h .ic{width:13px;height:13px;color:var(--accent)}
+  .dsec p{margin:0; font-size:13.5px; color:var(--text-dim)}
+  .taglist{display:flex; flex-wrap:wrap; gap:7px; margin:0; padding:0; list-style:none}
+  .taglist li{
+    font-size:12.5px; color:var(--text); background:var(--bg-3);
+    border:1px solid var(--line); border-radius:7px; padding:4px 9px;
+  }
+  .readlist{margin:0; padding:0; list-style:none; display:grid; gap:5px}
+  .readlist li{font-size:13px; color:var(--text-dim); padding-left:16px; position:relative}
+  .readlist li::before{content:"›"; position:absolute; left:0; color:var(--accent); font-weight:700}
+  .done-when{
+    font-size:13px; color:var(--text); background:color-mix(in srgb, var(--tier-leverage) 9%, transparent);
+    border:1px solid color-mix(in srgb, var(--tier-leverage) 30%, transparent);
+    border-radius:8px; padding:9px 12px; margin:0;
+  }
+  .done-when b{color:var(--tier-leverage)}
+  .cert{
+    margin-top:12px; display:inline-flex; align-items:center; gap:8px;
+    font-family:var(--mono); font-size:11.5px; color:var(--gold);
+    background:color-mix(in srgb, var(--gold) 10%, transparent);
+    border:1px solid color-mix(in srgb, var(--gold) 32%, transparent);
+    border-radius:999px; padding:4px 12px;
+  }
+
+  .footer{
+    text-align:center; padding:34px 0 60px; color:var(--text-faint); font-size:12.5px;
+    border-top:1px solid var(--line-soft); font-family:var(--mono);
+  }
+  .footer b{color:var(--text-dim)}
+
+  .spine-banner{
+    margin:6px 0 2px; padding:11px 16px; border-radius:10px;
+    background:color-mix(in srgb, var(--flare) 9%, transparent);
+    border:1px dashed color-mix(in srgb, var(--flare) 38%, transparent);
+    font-size:13px; color:var(--text-dim);
+  }
+  .spine-banner b{color:var(--accent)}
+
+  @media (max-width:640px){
+    .phase{grid-template-columns:44px 1fr; gap:12px}
+    .weeks-badge{display:none}
+    .rail::before{left:10px}
+    .node{left:1px}
+    .detail-pad{padding-left:16px}
+    .status-actions{margin-left:0; width:100%}
+    .hero{padding:44px 0 26px}
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none !important}
+    .phase{opacity:1; transform:none; transition:none}
+    .bar-fill{transition:none}
+  }
+</style>
+
+<div class="page">
+  <div class="wrap">
+    <!-- HERO -->
+    <header class="hero">
+      <div class="sun"></div>
+      <div class="orbit"></div>
+      <div class="hero-inner">
+        <p class="eyebrow">Cloud-Native LLM Orchestration Platform</p>
+        <h1 class="wordmark">HELIOS</h1>
+        <p class="tagline">Your depth-first roadmap from senior DevOps engineer to Cloud Solution Architect — 14 stages, built one running increment at a time.</p>
+        <div class="meta-row">
+          <span class="meta-chip"><span class="dot"></span><b>56</b> weeks</span>
+          <span class="meta-chip"><span class="dot"></span>~<b>13</b> months</span>
+          <span class="meta-chip"><span class="dot"></span><b>8–10</b> hrs / week</span>
+          <span class="meta-chip"><span class="dot"></span><b>14</b> stages</span>
+          <span class="meta-chip"><span class="dot"></span><b>30+</b> ADRs</span>
+          <span class="meta-chip"><span class="dot"></span><b>3</b> ⭐ anchors</span>
+        </div>
+      </div>
+    </header>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="statusbar">
+    <div class="wrap">
+      <div class="status-inner">
+        <span class="status-label">Progress</span>
+        <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+        <span class="pct" id="pctText">0%</span>
+        <span class="status-sub" id="wkText">0 / 56 weeks</span>
+        <span class="status-sub" id="hereText"></span>
+        <div class="status-actions">
+          <button class="btn" id="expandAll">Expand all</button>
+          <button class="btn" id="resetBtn">Reset</button>
+        </div>
+      </div>
+      <div class="legend">
+        <span class="lg"><span class="sw deep"></span>Deep-new — your genuine gaps</span>
+        <span class="lg"><span class="sw extend"></span>Extend — adjacent to what you know</span>
+        <span class="lg"><span class="sw leverage"></span>Leverage — you already operate this</span>
+        <span class="lg"><span class="sw mixed"></span>Mixed</span>
+        <span class="lg"><span class="star">⭐</span>Go-to-90% anchor</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- TIMELINE -->
+  <div class="wrap">
+    <main class="timeline" id="timeline"></main>
+    <div class="footer">
+      Spine first · <b>own Stages 0.5→5</b> and the back half rides your existing infra muscle.<br>
+      Read before you build · design in prose · you write 100% of the code · review + ADR. · <b>Helios</b>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var PHASES = [
+    { id:"A", weeks:"Wks 1–7", title:"Language & app discipline", spine:true, stages:[
+      { id:"0.5", wk:"Wks 1–4", w:4, tier:"deep", title:"Python + testing foundations",
+        sum:"The #1 gap — application Python, not scripting Python. Everything stands on this.",
+        build:"A typed, tested async service module with a real DB migration — no distributed systems yet.",
+        own:["typing + Pydantic v2","generators/coroutines vs async/await","context managers & decorators","pytest: fixtures, parametrize, mocking","hypothesis property tests","async SQLAlchemy + Alembic","uv / packaging & venv hygiene"],
+        read:["Fluent Python — data-model + async chapters","FastAPI + SQLAlchemy async tutorial","pytest docs"],
+        done:"You can write a typed async module with a migration and a meaningful test suite — and explain the event loop aloud." },
+      { id:"0", wk:"Wks 5–7", w:3, tier:"deep", title:"FastAPI rewrite + clean architecture",
+        sum:"Rewrite the CRUD to FastAPI with layered, testable structure.",
+        build:"FastAPI rewrite; hexagonal (ports/adapters); validation; consistent errors; correlation IDs; idempotency keys; optimistic concurrency; 12-factor config.",
+        own:["hexagonal / ports & adapters","idempotency vs at-least-once","optimistic vs pessimistic concurrency","12-factor config","correlation IDs / request context"],
+        read:["Fundamentals of Software Architecture","12factor.net","Cloud Design Patterns: Idempotency, Health Endpoint Monitoring"],
+        done:"" }
+    ]},
+    { id:"B", weeks:"Wks 8–14", title:"The distributed core", spine:true, cert:"CKA — start background prep here (nearly free for you)", stages:[
+      { id:"1", wk:"Wks 8–11", w:4, tier:"deep", title:"Async core: queue, state machine, event sourcing",
+        sum:"Accept jobs instantly; process them durably.",
+        build:"202 + id on submit; durable queue (Redis Streams); worker; explicit job state machine; append-only event log; at-least-once + idempotent consumer; cancellation.",
+        own:["separating accept from process","state machines in code","event sourcing → state reconstruction","idempotent consumers","the exactly-once myth"],
+        read:["DDIA Ch.1, 5, 9","Cloud Design Patterns: Queue-Based Load Leveling, Competing Consumers, Event Sourcing, CQRS"],
+        done:"" },
+      { id:"2", wk:"Wks 12–14", w:3, tier:"extend", title:"Polyglot persistence: MongoDB + Redis",
+        sum:"The right datastore for each shape of data.",
+        build:"Relational core stays in Postgres; trajectories/payloads → MongoDB; Redis hot state. Write the “why polyglot” ADR.",
+        own:["embed vs reference modeling","aggregation pipeline","change streams","TTL indexes"],
+        read:["DDIA Ch.2","MongoDB Data Modeling + 6 Rules of Thumb","MongoDB University M001 / M320"],
+        done:"" }
+    ]},
+    { id:"C", weeks:"Wks 15–19", title:"The agent layer", spine:true, star:true, stages:[
+      { id:"3", wk:"Wks 15–19", w:5, tier:"deep", anchor:"Emergent core", title:"Agent loop + RAG",
+        sum:"The Emergent core — a real agent loop with Claude. Fully new; non-negotiable time.",
+        build:"A job type running plan → tool-call → observe → iterate, bounded by a token budget; persist the trajectory; stream via SSE; multi-agent patterns; RAG (embeddings + pgvector/Qdrant); an eval harness.",
+        own:["safe agent-loop termination","tool / function calling","context-window & token budgeting","embeddings & semantic retrieval","when RAG helps vs hurts","multi-agent patterns"],
+        read:["Anthropic API docs — Messages, tool use","Anthropic — Building Effective Agents"],
+        done:"" }
+    ]},
+    { id:"D", weeks:"Wks 20–24", title:"Resilience", spine:true, star:true, stages:[
+      { id:"4", wk:"Wks 20–24", w:5, tier:"deep", anchor:"Anchor #1", title:"Rate-limit / breaker / retry / fallback",
+        sum:"Turn SRE intuition into resilience you built. Highest interview value.",
+        build:"Provider registry; selector (round-robin/weighted/least-loaded); rate limiter (token bucket + sliding window via Redis/Lua); circuit breaker (closed/open/half-open); retry + backoff + jitter; fallback chain; load shedding.",
+        own:["why jitter matters","half-open probing","when fallback is an anti-pattern","load-shedding vs backpressure","distributed rate limiting"],
+        read:["Release It! — stability patterns","Amazon Builders' Library — retries/backoff/jitter, load shedding, avoiding fallback"],
+        done:"Your story: “I've operated these in Envoy — here's how I built them.”" }
+    ]},
+    { id:"E", weeks:"Wks 25–29", title:"Event-driven backbone", spine:true, stages:[
+      { id:"5", wk:"Wks 25–29", w:5, tier:"deep", title:"Kafka + CQRS + Saga + CDC",
+        sum:"An event-streaming backbone with real guarantees. End of the spine.",
+        build:"Kafka (Redpanda locally); partitions/consumer-groups/replay/exactly-once; DLQ; schema registry + evolution; outbox pattern; CQRS read models; Saga for multi-step jobs; CDC (Debezium) Postgres→warehouse.",
+        own:["partitions & consumer groups","exactly-once semantics","outbox pattern","CQRS","Saga: orchestration vs choreography","change data capture"],
+        read:["DDIA Ch.11","Confluent Kafka 101","microservices.io: Saga, Transactional Outbox","Debezium docs"],
+        done:"Own everything to here (Week 29) and you're already a different candidate." }
+    ]},
+    { id:"F", weeks:"Wks 30–32", title:"Multi-tenancy & identity", stages:[
+      { id:"6", wk:"Wks 30–32", w:3, tier:"extend", title:"Tenants, identity, Vault",
+        sum:"Many tenants, real identity, real secrets. New = app-side auth logic.",
+        build:"Tenants, API keys, quotas, usage ledger; OAuth2/OIDC/JWT (Keycloak); Vault dynamic creds + PKI; RBAC; prompt-injection defense.",
+        own:["OAuth2 / OIDC / JWT flows","tenant isolation & fair scheduling","dynamic secrets & PKI","quota / usage ledgers","prompt-injection defense"],
+        read:["Well-Architected Security pillar","Keycloak docs","Vault docs — dynamic secrets, PKI","OWASP API Security Top 10"],
+        done:"" }
+    ]},
+    { id:"G", weeks:"Wks 33–36", title:"Internal comms & Go", stages:[
+      { id:"7", wk:"Wks 33–36", w:4, tier:"mixed", title:"gRPC, service mesh, Go",
+        sum:"Polyglot microservices over gRPC + mesh. Go + gRPC are the real learning; the mesh is yours.",
+        build:"gRPC + Protobuf between services; rewrite the worker in Go (goroutines/channels/context); Istio for mTLS + traffic-shaping.",
+        own:["gRPC + Protobuf","Go concurrency: goroutines, channels, context","service-mesh mTLS","deliberate traffic shaping"],
+        read:["A Tour of Go + Effective Go","gRPC docs + Protobuf guide","Istio / Linkerd docs"],
+        done:"" }
+    ]},
+    { id:"H", weeks:"Wks 37–40", title:"K8s deep + custom Operator", star:true, stages:[
+      { id:"8", wk:"Wks 37–40", w:4, tier:"leverage", anchor:"Anchor #2", title:"K8s deep + custom Operator + KEDA",
+        sum:"Your K8s mastery, elevated to authoring an Operator. Spend the weeks almost entirely here.",
+        build:"Production K8s (RBAC/NetPol/PSS/PDB you already own) + a custom Operator + CRD (Kubebuilder) + KEDA autoscaling on Kafka lag + Kyverno/OPA policy.",
+        own:["controllers & the reconcile loop","CRD design","KEDA event-driven autoscaling","admission control / policy-as-code"],
+        read:["Kubernetes docs — CRDs, controllers","Kubebuilder / Operator SDK book","KEDA docs","Kyverno / OPA Gatekeeper docs"],
+        done:"“I wrote a Kubernetes operator in Go” is a top-tier differentiator you reach fast." }
+    ]},
+    { id:"I", weeks:"Wks 41–44", title:"Frontend + A/B framework", stages:[
+      { id:"9", wk:"Wks 41–44", w:4, tier:"mixed", title:"Dashboard + experimentation framework",
+        sum:"A dashboard + a real experimentation framework.",
+        build:"Next.js/React/TS dashboard; live trajectory (SSE); experimentation framework: feature flags, traffic splitting, statistical significance, guardrails/auto-rollback.",
+        own:["React / Next / TypeScript basics","SSE / streaming UI","feature flags & traffic splitting","statistical significance & guardrails"],
+        read:["Next.js docs","react.dev Learn","TypeScript handbook","Trustworthy Online Controlled Experiments (Kohavi)"],
+        done:"" }
+    ]},
+    { id:"J", weeks:"Wks 45–47", title:"Preview environments", stages:[
+      { id:"10", wk:"Wks 45–47", w:3, tier:"extend", title:"Per-tenant preview environments",
+        sum:"Ephemeral per-tenant stacks — powered by your Stage-8 operator.",
+        build:"On-demand isolated stacks (vcluster); external-dns + cert-manager for domains + TLS; lifecycle/teardown; ArgoCD ApplicationSets.",
+        own:["vcluster / namespace-per-tenant isolation","external-dns + cert-manager","GitOps ApplicationSets","environment lifecycle & teardown"],
+        read:["vcluster docs","external-dns + cert-manager docs","ArgoCD ApplicationSets docs"],
+        done:"" }
+    ]},
+    { id:"K", weeks:"Wks 48–52", title:"Cloud, IaC, multi-region", cert:"AWS SAP-C02 — aim for the Professional here", stages:[
+      { id:"11", wk:"Wks 48–52", w:5, tier:"mixed", title:"Terraform AWS + multi-region",
+        sum:"Real cloud, real networking, multi-region. Terraform mechanics are yours; multi-region reasoning is new.",
+        build:"Terraform a real AWS env (VPC/EKS+IRSA/RDS/ElastiCache/MSK/S3/ALB/Route53/CloudFront/ACM/WAF/KMS); multi-region (active-passive → active-active); FinOps (Infracost); one real deploy.",
+        own:["VPC / subnets / SG vs NACL","IRSA & IAM least-privilege","active-passive vs active-active","FinOps: budgets, tagging, cost allocation"],
+        read:["AWS VPC + IAM best-practices","AWS EKS Workshop (IRSA/VPC)","Terraform AWS modules + Terratest","Well-Architected Reliability + Cost"],
+        done:"" }
+    ]},
+    { id:"L", weeks:"Wks 53–56", title:"Observability, SRE, chaos & capstone", star:true, stages:[
+      { id:"12", wk:"Wks 53–56", w:4, tier:"leverage", anchor:"Anchor #3", title:"Instrument, SLOs, chaos, supply-chain, capstone",
+        sum:"Instrument what you built; run it like an SRE. “I run Grafana” → “I set this system's SLOs.”",
+        build:"OTel across async/Kafka/gRPC; Prometheus + recording rules/Alertmanager; Loki; Grafana; Pyroscope; SLOs + burn-rate alerts; chaos (Chaos Mesh); supply-chain (SBOM/cosign/SLSA); k6 load test; capstone artifacts.",
+        own:["instrumenting your own code (OTel)","SLO / SLI / error budgets","burn-rate alerting","chaos engineering","supply-chain security (SBOM/cosign/SLSA)"],
+        read:["Google SRE Book + Workbook","OpenTelemetry docs","Chaos Mesh docs","sigstore/cosign + SLSA docs","k6 docs"],
+        done:"Capstone: Well-Architected review, cost model, C4 + Exceptional-4 diagrams, failure playbook, scale-at-100x." }
+    ]}
+  ];
+
+  var TOTAL_WEEKS = 56;
+  var STORE = "helios-roadmap-v1";
+  var state = {};
+  try { state = JSON.parse(localStorage.getItem(STORE) || "{}") || {}; } catch(e){ state = {}; }
+  function save(){ try{ localStorage.setItem(STORE, JSON.stringify(state)); }catch(e){} }
+
+  var CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
+  var CHEV_SVG = '<svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+  var IC_BUILD = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2-2 2.6-2.6z"/></svg>';
+  var IC_OWN = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18M3 12h18"/></svg>';
+  var IC_READ = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h6v18H6a2 2 0 0 0-2 2V5zM20 5a2 2 0 0 0-2-2h-6v18h6a2 2 0 0 1 2 2V5z"/></svg>';
+
+  function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+  var tl = document.getElementById("timeline");
+  var html = "";
+  PHASES.forEach(function(p){
+    var stageIds = p.stages.map(function(s){return s.id;});
+    html += '<section class="phase'+(p.spine?" spine-tag":"")+(p.star?" anchor":"")+'" data-phase="'+p.id+'" data-stages="'+stageIds.join(",")+'">';
+    html += '<div class="rail"><div class="node">'+p.id+'</div>'
+          + '<div class="weeks-badge"><b>Phase '+p.id+'</b>'+p.weeks+'</div></div>';
+    html += '<div class="phase-body">';
+    html += '<div class="phase-head"><h2 class="phase-title">'+esc(p.title)+'</h2>'
+          + (p.star?'<span class="phase-star">⭐</span>':'')
+          + '<span class="phase-prog" data-phaseprog="'+p.id+'">0/'+p.stages.length+'</span></div>';
+    if(p.id==="E"){ html += '<div class="spine-banner">🏁 <b>End of the spine.</b> Weeks 1–29 carry ~60% of your hours — this is where the real transformation happens.</div>'; }
+    p.stages.forEach(function(s){
+      html += '<article class="stage" data-stage="'+s.id+'" style="--tier:var(--tier-'+s.tier+')">';
+      html += '<div class="st-head" data-toggle>';
+      html += '<div class="check" role="checkbox" aria-checked="false" tabindex="0" data-check aria-label="Mark Stage '+s.id+' complete">'+CHECK_SVG+'</div>';
+      html += '<div class="st-main">';
+      html += '<div class="st-line1"><span class="st-id">Stage '+s.id+'</span><span class="st-wk">'+s.wk+'</span>'
+            + '<span class="tier-chip">'+s.tier+'</span>'
+            + (s.anchor?'<span class="anchor-badge">⭐ '+esc(s.anchor)+'</span>':'')+'</div>';
+      html += '<h3 class="st-title">'+esc(s.title)+'</h3>';
+      html += '<p class="st-sum">'+esc(s.sum)+'</p>';
+      html += '</div>'+CHEV_SVG+'</div>';
+      // detail
+      html += '<div class="st-detail"><div class="st-detail-inner"><div class="detail-pad">';
+      html += '<div class="dsec"><p class="dsec-h">'+IC_BUILD+'What you build</p><p>'+esc(s.build)+'</p></div>';
+      html += '<div class="dsec"><p class="dsec-h">'+IC_OWN+'Concepts to own</p><ul class="taglist">'
+            + s.own.map(function(o){return '<li>'+esc(o)+'</li>';}).join("")+'</ul></div>';
+      html += '<div class="dsec"><p class="dsec-h">'+IC_READ+'Read first</p><ul class="readlist">'
+            + s.read.map(function(r){return '<li>'+esc(r)+'</li>';}).join("")+'</ul></div>';
+      if(s.done){ html += '<div class="dsec"><p class="done-when"><b>Done when · </b>'+esc(s.done)+'</p></div>'; }
+      if(p.cert){ html += '<div class="cert">🎓 '+esc(p.cert)+'</div>'; }
+      html += '</div></div></div>';
+      html += '</article>';
+    });
+    html += '</div></section>';
+  });
+  tl.innerHTML = html;
+
+  // ---- interactions ----
+  function stageById(id){
+    for(var i=0;i<PHASES.length;i++){ for(var j=0;j<PHASES[i].stages.length;j++){ if(PHASES[i].stages[j].id===id) return PHASES[i].stages[j]; } }
+    return null;
+  }
+
+  function recompute(){
+    var doneWeeks=0, doneStages=0, totalStages=0, firstIncomplete=null;
+    PHASES.forEach(function(p){
+      var pd=0;
+      p.stages.forEach(function(s){
+        totalStages++;
+        if(state[s.id]){ doneWeeks+=s.w; doneStages++; pd++; }
+        else if(!firstIncomplete){ firstIncomplete=p; }
+      });
+      var pp=document.querySelector('[data-phaseprog="'+p.id+'"]');
+      if(pp){ pp.textContent=pd+"/"+p.stages.length; pp.classList.toggle("full", pd===p.stages.length); }
+      var sec=document.querySelector('.phase[data-phase="'+p.id+'"]');
+      if(sec){ sec.classList.toggle("done-all", pd===p.stages.length); }
+    });
+    var pct=Math.round(doneWeeks/TOTAL_WEEKS*100);
+    document.getElementById("barFill").style.width=pct+"%";
+    document.getElementById("pctText").textContent=pct+"%";
+    document.getElementById("wkText").textContent=doneWeeks+" / "+TOTAL_WEEKS+" weeks";
+    var here=document.getElementById("hereText");
+    if(doneStages===0){ here.textContent="· Start at Stage 0.5"; }
+    else if(firstIncomplete){ here.textContent="· You are here: Phase "+firstIncomplete.id; }
+    else { here.textContent="· 🎉 Complete — you built Helios"; }
+  }
+
+  function setDone(card, id, val){
+    state[id]=val; if(!val) delete state[id];
+    card.classList.toggle("done", val);
+    var chk=card.querySelector("[data-check]");
+    chk.setAttribute("aria-checked", val?"true":"false");
+    save(); recompute();
+  }
+
+  tl.addEventListener("click", function(e){
+    var chk=e.target.closest("[data-check]");
+    if(chk){ e.stopPropagation(); var card=chk.closest(".stage"); setDone(card, card.dataset.stage, !state[card.dataset.stage]); return; }
+    var head=e.target.closest("[data-toggle]");
+    if(head){ head.closest(".stage").classList.toggle("open"); }
+  });
+  tl.addEventListener("keydown", function(e){
+    var chk=e.target.closest("[data-check]");
+    if(chk && (e.key===" "||e.key==="Enter")){ e.preventDefault(); var card=chk.closest(".stage"); setDone(card, card.dataset.stage, !state[card.dataset.stage]); }
+  });
+
+  // restore done state
+  document.querySelectorAll(".stage").forEach(function(card){
+    if(state[card.dataset.stage]){ setDone(card, card.dataset.stage, true); }
+  });
+
+  // expand/collapse all
+  var expBtn=document.getElementById("expandAll");
+  expBtn.addEventListener("click", function(){
+    var cards=document.querySelectorAll(".stage");
+    var anyClosed=false; cards.forEach(function(c){ if(!c.classList.contains("open")) anyClosed=true; });
+    cards.forEach(function(c){ c.classList.toggle("open", anyClosed); });
+    expBtn.textContent=anyClosed?"Collapse all":"Expand all";
+  });
+  document.getElementById("resetBtn").addEventListener("click", function(){
+    if(!confirm("Reset all progress? This clears every checked stage.")) return;
+    state={}; save();
+    document.querySelectorAll(".stage.done").forEach(function(c){ setDone(c, c.dataset.stage, false); });
+    recompute();
+  });
+
+  recompute();
+
+  // reveal on scroll + trunk grow
+  if(window.IntersectionObserver && !window.matchMedia("(prefers-reduced-motion: reduce)").matches){
+    var io=new IntersectionObserver(function(entries){
+      entries.forEach(function(en){ if(en.isIntersecting){ en.target.classList.add("in"); io.unobserve(en.target); } });
+    },{threshold:.12, rootMargin:"0px 0px -8% 0px"});
+    document.querySelectorAll(".phase").forEach(function(p){ io.observe(p); });
+  } else {
+    document.querySelectorAll(".phase").forEach(function(p){ p.classList.add("in"); });
+  }
+})();
+</script>
