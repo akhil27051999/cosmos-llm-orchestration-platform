@@ -73,7 +73,7 @@ LAYERS = [
      "Clients and networks retry automatically — the system must never act twice on one request.",
      ["Safe retries","No lost updates"],
      ["Extra key storage & careful design"]),
-   C("keycloak","Keycloak · OAuth2/OIDC/JWT","keycloak2",None,6,
+   C("keycloak","Keycloak · OAuth2/OIDC/JWT","keycloak",None,6,
      "An open-source identity provider speaking OAuth2 / OIDC / JWT.",
      "Authenticates every caller and issues tokens that say what they're allowed to do.",
      "Full-featured, standards-based, self-hosted — no per-user SaaS fees.",
@@ -629,63 +629,153 @@ INTER = ('<title>Helios — Interactive Architecture</title><style>'+CSS+'</styl
 open("helios-arch-interactive.html","w").write(INTER)
 print("interactive:", len(INTER), "bytes")
 
-# ---------------- PRINT / PDF HTML ----------------
+# ---------------- PRINT / PDF HTML (light, roadmap-style) ----------------
+PCSS = """
+@page{size:A4;margin:15mm 14mm 13mm}
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+html,body{margin:0;padding:0}
+:root{--ink:#1B1E24;--muted:#565D6B;--faint:#8B909C;--line:#E4E1DA;--soft:#EFEDE7;--panel:#FAF8F3;--accent:#C4611E}
+body{font-family:-apple-system,"Helvetica Neue",Arial,sans-serif;color:var(--ink);font-size:10.5px;line-height:1.5;background:#fff}
+h1,h2,h3,h4{margin:0;line-height:1.2}
+p{margin:0}
+/* cover */
+.cover{height:262mm;display:flex;flex-direction:column;page-break-after:always}
+.cover-top{border-top:3px solid var(--accent);padding-top:10mm}
+.kicker{font:600 10px/1 "SF Mono",ui-monospace,monospace;letter-spacing:.34em;text-transform:uppercase;color:var(--accent)}
+.cover h1{font-size:58px;font-weight:800;letter-spacing:-.02em;margin:8mm 0 3mm}
+.cover .sub{font-size:15.5px;color:var(--muted);max-width:158mm;line-height:1.45}
+.cover-mid{margin:auto 0}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden;max-width:172mm}
+.fact{padding:6mm;border-right:1px solid var(--soft);border-bottom:1px solid var(--soft)}
+.fact:nth-child(3n){border-right:none}.fact:nth-last-child(-n+3){border-bottom:none}
+.fact .n{font-size:26px;font-weight:800;color:var(--accent);letter-spacing:-.02em}
+.fact .l{font-size:10.5px;color:var(--muted);margin-top:1mm}
+.cover-bottom{border-top:1px solid var(--line);padding-top:5mm;display:flex;justify-content:space-between;align-items:flex-end;font-size:10px;color:var(--faint)}
+.cover-bottom b{color:var(--muted);font-weight:600}
+/* sections */
+.section{page-break-before:always;padding-top:2mm}
+.sec-head{display:flex;align-items:baseline;gap:9px;border-bottom:2px solid var(--ink);padding-bottom:2.5mm;margin-bottom:5mm}
+.sec-num{font:700 12px/1 "SF Mono",ui-monospace,monospace;color:var(--accent)}
+.sec-head h2{font-size:20px;font-weight:800}
+.lead{font-size:11.5px;color:var(--muted);max-width:174mm;margin-bottom:6mm;line-height:1.55}
+.lead b{color:var(--ink)}
+/* request steps */
+.steps{display:grid;gap:2.4mm}
+.stp{display:grid;grid-template-columns:22px 1fr;gap:9px;align-items:start;break-inside:avoid}
+.stp .n{font:700 10px/20px "SF Mono",monospace;color:#fff;background:var(--accent);border-radius:50%;width:20px;height:20px;text-align:center}
+.stp .nm{font-weight:700;font-size:11.5px}
+.stp .rl{color:var(--muted);font-size:11px}
+/* flow diagram (light) */
+.flow{display:flex;flex-direction:column}
+.layer{border:1px solid var(--line);border-radius:10px;padding:8px 11px;position:relative;background:#fff;break-inside:avoid}
+.layer::before{content:"";position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:3px;background:var(--c)}
+.layer.cross{border-style:dashed;margin-top:6px}
+.l-head{display:flex;align-items:center;gap:8px;margin-bottom:7px;padding-left:6px}
+.l-tag{font:700 8.5px/1 "SF Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--c)}
+.l-name{font-size:12.5px;font-weight:750}
+.l-role{margin-left:auto;font:9.5px "SF Mono",monospace;color:var(--faint)}
+.l-chips{display:flex;flex-wrap:wrap;gap:6px;padding-left:6px}
+.chip{display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);border-top:2px solid var(--c);border-radius:8px;padding:5px 9px 5px 6px}
+.ct{font-size:10.5px;font-weight:650}
+.badge{width:24px;height:24px;border-radius:6px;background:#fff;border:1px solid var(--soft);display:flex;align-items:center;justify-content:center;flex:none}
+.badge img{width:16px;height:16px;object-fit:contain}
+.badge.concept{background:color-mix(in srgb,var(--c) 13%,#fff);border-color:color-mix(in srgb,var(--c) 30%,#fff)}
+.badge .glyph{font-size:12px}
+.arrow{display:flex;justify-content:center;align-items:center;height:15px;color:var(--faint);font-size:11px}
+.xdiv{text-align:center;margin:12px 0 8px;font:700 9px/1 "SF Mono",monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--faint)}
+/* reference */
+.rs{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:750;margin:15px 0 8px;color:var(--ink);break-after:avoid}
+.rs .ic{color:var(--c)}
+.rgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px}
+.rc{border:1px solid var(--line);border-left:3px solid var(--c);border-radius:9px;padding:8px 10px;break-inside:avoid;background:#fff}
+.rc-h{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.rc .badge{width:30px;height:30px;border-radius:7px}.rc .badge img{width:19px;height:19px}
+.rc-n{font-size:12px;font-weight:750}
+.rc-l{font:8.5px "SF Mono",monospace;color:var(--faint);text-transform:uppercase;letter-spacing:.07em}
+.rc .ln{font-size:10px;color:var(--muted);line-height:1.42;margin-bottom:2px}.rc .ln b{color:var(--ink)}
+.rc .why{color:var(--muted);background:var(--panel);border:1px solid var(--soft);border-left:2px solid var(--c);border-radius:6px;padding:5px 8px;margin:5px 0;font-size:10px;line-height:1.42}.rc .why b{color:var(--c)}
+.rc-pc{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rc-pc ul{list-style:none;margin:0;padding:0}
+.rc-pc li{font-size:9.5px;line-height:1.35;padding-left:12px;position:relative;color:var(--muted);margin-bottom:2px}
+.rc-pc .pros li::before{content:"+";position:absolute;left:0;color:#1E8C6B;font-weight:700}
+.rc-pc .cons li::before{content:"\\2013";position:absolute;left:0;color:#C0431F;font-weight:700}
+.foot{margin-top:6mm;border-top:1px solid var(--line);padding-top:3mm;font:9px "SF Mono",monospace;color:var(--faint);text-align:center}
+"""
+
+def p_chip(c):
+    return '<div class="chip">%s<span class="ct">%s</span></div>' % (badge_html(c), c["name"])
+
+def p_flow():
+    req = [L for L in LAYERS if not L["cross"]]; cross = [L for L in LAYERS if L["cross"]]
+    out = ['<div class="flow">']
+    for i, L in enumerate(req):
+        chips = "".join(p_chip(c) for c in L["components"])
+        out.append('<div class="layer" style="--c:%s"><div class="l-head"><span class="l-tag">Layer %d</span>'
+                   '<span class="l-name">%s %s</span><span class="l-role">%s</span></div>'
+                   '<div class="l-chips">%s</div></div>' % (L["color"], i+1, L["icon"], L["name"], L["role"], chips))
+        if i < len(req)-1: out.append('<div class="arrow">&#9660;</div>')
+    out.append('</div><div class="xdiv">&#9661; Spans every layer above &#9661;</div><div class="flow">')
+    for L in cross:
+        chips = "".join(p_chip(c) for c in L["components"])
+        out.append('<div class="layer cross" style="--c:%s"><div class="l-head"><span class="l-tag">Cross-cutting</span>'
+                   '<span class="l-name">%s %s</span><span class="l-role">%s</span></div>'
+                   '<div class="l-chips">%s</div></div>' % (L["color"], L["icon"], L["name"], L["role"], chips))
+    out.append('</div>')
+    return "".join(out)
+
+def p_steps():
+    return '<div class="steps">' + "".join(
+        '<div class="stp"><span class="n">%d</span><div><span class="nm">%s</span> &nbsp;&mdash;&nbsp; <span class="rl">%s</span></div></div>'
+        % (k+1, s["name"], s["role"]) for k, s in enumerate(PATH_STEPS)) + '</div>'
+
 def ref_card(c, color, layer):
-    b = badge_html(c, 40)
     pros = "".join('<li>%s</li>'%x for x in c["pros"])
     cons = "".join('<li>%s</li>'%x for x in c["cons"])
     return ('<div class="rc" style="--c:%s"><div class="rc-h">%s<div><div class="rc-n">%s</div>'
             '<div class="rc-l">%s</div></div></div>'
-            '<p class="rc-w"><b>What:</b> %s</p>'
-            '<p class="rc-w"><b>Role:</b> %s</p>'
-            '<p class="rc-y"><b>Why chosen:</b> %s</p>'
+            '<p class="ln"><b>What:</b> %s</p><p class="ln"><b>Role:</b> %s</p>'
+            '<div class="why"><b>Why chosen:</b> %s</div>'
             '<div class="rc-pc"><ul class="pros">%s</ul><ul class="cons">%s</ul></div></div>'
-            % (color, b, c["name"], layer, c["what"], c["role"], c["why"], pros, cons))
+            % (color, badge_html(c), c["name"], layer, c["what"], c["role"], c["why"], pros, cons))
 
-ref_sections = []
-for L in LAYERS:
-    cards = "".join(ref_card(c, L["color"], L["name"]) for c in L["components"])
-    ref_sections.append('<h3 class="rs" style="--c:%s"><span>%s</span> %s</h3><div class="rgrid">%s</div>'
-                         % (L["color"], L["icon"], L["name"], cards))
+ref_sections = "".join(
+    '<h3 class="rs" style="--c:%s"><span class="ic">%s</span> %s</h3><div class="rgrid">%s</div>'
+    % (L["color"], L["icon"], L["name"], "".join(ref_card(c, L["color"], L["name"]) for c in L["components"]))
+    for L in LAYERS)
 
-PCSS = CSS + """
-@page{size:A4;margin:12mm}
-.page{background:var(--bg)!important}
-.wrap{max-width:none;padding:0}
-.band{opacity:1;transform:none;animation:none;break-inside:avoid}
-.diagram{transform:none!important;width:auto}
-.chip{cursor:default}
-.conn .rail::after{animation:none;opacity:.5;top:30%}
-.refhead{break-before:page;border-top:2px solid var(--accent);padding-top:10px;margin-top:26px}
-.refhead h2{font-size:22px;font-weight:800}
-.refhead p{color:var(--dim);font-size:12px;margin-top:4px}
-.rs{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:750;margin:16px 0 9px;color:var(--text);break-after:avoid}
-.rs span{color:var(--c)}
-.rgrid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:6px}
-.rc{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--c);border-radius:9px;padding:9px 11px;break-inside:avoid}
-.rc-h{display:flex;align-items:center;gap:9px;margin-bottom:6px}
-.rc .badge{width:32px;height:32px}.rc .badge img{width:20px;height:20px}
-.rc-n{font-size:12.5px;font-weight:750}.rc-l{font:9px ui-monospace,monospace;color:var(--faint);text-transform:uppercase;letter-spacing:.08em}
-.rc-w{font-size:10.5px;color:var(--dim);line-height:1.4;margin-bottom:3px}.rc-w b{color:var(--text)}
-.rc-y{font-size:10.5px;color:var(--dim);line-height:1.4;margin:4px 0 6px}.rc-y b{color:var(--c)}
-.rc-pc{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.rc-pc ul{list-style:none}.rc-pc li{font-size:10px;line-height:1.35;padding-left:13px;position:relative;color:var(--dim);margin-bottom:3px}
-.rc-pc .pros li::before{content:"✓";position:absolute;left:0;color:#3EB6A0}
-.rc-pc .cons li::before{content:"–";position:absolute;left:0;color:#F0623C}
-"""
+FACTS = [("9","request-path layers"),("3","cross-cutting planes"),("56","components explained"),
+         ("40+","tools &amp; technologies"),("14","steps, edge &#8594; model"),("5","polyglot datastores")]
+facts_html = "".join('<div class="fact"><div class="n">%s</div><div class="l">%s</div></div>'%(n,l) for n,l in FACTS)
 
-PRINT = ('<title>Helios Architecture</title><style>'+PCSS+'</style>'
- '<div class="page"><div class="wrap">'
- '<div class="banner"><h1>Helios — End-to-End Architecture</h1>'
- '<div class="sub">Cloud-Native LLM Orchestration Platform · the full request flow, layer by layer</div></div>'
- '<div class="legend">'
- + "".join('<span class="lg"><span class="d" style="background:%s"></span>%s</span>'%(L["color"],L["name"]) for L in LAYERS)
- + '</div>'
- '<div class="diagram">'+BANDS+'</div>'
- '<div class="refhead"><h2>Component Reference</h2><p>Every component in plain English — what it is, its role in the layer, why we chose it, and its trade-offs.</p></div>'
- + "".join(ref_sections) +
- '<div class="foot">Helios · Cloud-Native LLM Orchestration Platform — architecture &amp; component reference</div>'
- '</div></div>')
+PRINT = ('<title>Helios — Architecture</title><style>'+PCSS+'</style>'
+ '<section class="cover"><div class="cover-top">'
+ '<div class="kicker">Cloud Solution Architect &middot; Portfolio Project</div>'
+ '<h1>Helios</h1>'
+ '<p class="sub">End-to-End Architecture of the Cloud-Native LLM Orchestration Platform &mdash; how a request flows '
+ 'from edge to model to storage, and why every component is there.</p></div>'
+ '<div class="cover-mid"><div class="facts">'+facts_html+'</div></div>'
+ '<div class="cover-bottom"><div>Prepared for <b>mentor review</b> &middot; every component explained in plain English.</div>'
+ '<div>Repo: <b>helios-llm-orchestration-platform</b></div></div></section>'
+ # section 1 — the request journey
+ '<section class="section"><div class="sec-head"><span class="sec-num">01</span><h2>The request, end to end</h2></div>'
+ '<p class="lead">Follow one job through the platform. A client submits it at the edge; the gateway accepts it instantly and '
+ 'returns an id; it is queued on the event backbone; a worker runs the agent loop against the model with resilience wrapped '
+ 'around every call; results stream back and persist across the polyglot stores. Each step below is one component in the path.</p>'
+ + p_steps() +
+ '</section>'
+ # section 2 — the map
+ '<section class="section"><div class="sec-head"><span class="sec-num">02</span><h2>Architecture map</h2></div>'
+ '<p class="lead">The full system as stacked layers &mdash; the request flows top to bottom; the three cross-cutting planes '
+ '(platform, delivery, observability) support every layer above. Logos identify each product; symbols mark patterns.</p>'
+ + p_flow() +
+ '</section>'
+ # section 3 — reference
+ '<section class="section"><div class="sec-head"><span class="sec-num">03</span><h2>Component reference</h2></div>'
+ '<p class="lead">Every component in plain English &mdash; <b>what it is</b>, <b>its role</b> in the layer, <b>why we chose it</b>, '
+ 'and its trade-offs. Written so a non-technical reader can follow, and you can defend each choice.</p>'
+ + ref_sections +
+ '<div class="foot">Helios &middot; Cloud-Native LLM Orchestration Platform &mdash; architecture &amp; component reference</div>'
+ '</section>')
 
 open("helios-arch-print.html","w").write(PRINT)
 print("print:", len(PRINT), "bytes")
