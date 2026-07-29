@@ -491,11 +491,15 @@ CSS = """
 .conn .arrow{position:absolute;bottom:-3px;color:var(--line);font-size:12px}
 .cross-divider{text-align:center;margin:22px 0 14px;font:700 10px/1 ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--faint)}
 /* isometric mode */
-.iso-wrap{overflow:hidden}
-.diagram.iso{transform:perspective(2600px) rotateX(46deg) rotateZ(-40deg) scale(.9);transform-origin:top center;transform-style:preserve-3d;gap:20px;margin:0 auto;width:80%}
+.diagram.iso{transform:perspective(2600px) rotateX(46deg) rotateZ(-40deg) scale(.9);transform-origin:top center;transform-style:preserve-3d;gap:30px;margin:0 auto 30px;width:80%}
 .diagram.iso .conn,.diagram.iso .cross-divider{display:none}
-.diagram.iso .band{box-shadow:-24px 24px 40px -18px rgba(0,0,0,.8);border-top:1px solid rgba(255,255,255,.12)}
-.diagram.iso .band::after{content:"";position:absolute;left:0;right:0;bottom:-10px;height:10px;background:var(--c);opacity:.35;transform:skewX(-45deg);transform-origin:top;border-radius:0 0 10px 10px}
+.diagram.iso .band{background:color-mix(in srgb,var(--c) 24%,#0e131b);border:1px solid color-mix(in srgb,var(--c) 55%,transparent);border-radius:14px;box-shadow:-34px 34px 58px -22px rgba(0,0,0,.85)}
+.diagram.iso .band::before{width:0}
+.diagram.iso .band::after{content:"";position:absolute;left:7px;right:-1px;bottom:-17px;height:17px;background:linear-gradient(var(--c),color-mix(in srgb,var(--c) 35%,#000));opacity:.7;transform:skewX(-45deg);transform-origin:top;border-radius:0 0 13px 13px}
+.diagram.iso .band-name{color:#fff}.diagram.iso .band-tag{color:#fff;opacity:.85}.diagram.iso .band-role{color:rgba(255,255,255,.6)}
+.diagram.iso .chip{background:#fbfcfe;border:1px solid rgba(0,0,0,.14);border-top:2px solid var(--c);color:#141a22;box-shadow:0 4px 10px -4px rgba(0,0,0,.5)}
+.diagram.iso .chip .chip-t{color:#141a22}
+.diagram.iso .badge,.diagram.iso .badge.concept{background:#fff;border:1px solid rgba(0,0,0,.08)}
 /* drawer */
 .scrim{position:fixed;inset:0;background:rgba(4,7,12,.6);opacity:0;pointer-events:none;transition:.25s;z-index:40}
 .scrim.show{opacity:1;pointer-events:auto}
