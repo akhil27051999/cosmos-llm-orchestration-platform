@@ -23,7 +23,7 @@
 
 ### ⚠️ The reframe that matters most: scripting Python ≠ application Python
 You write Python to *automate infrastructure* (idempotent scripts, glue, CLI tools, Ansible modules).
-The Helios core is *application* Python: long-lived async services, type-driven domain models, layered
+The Nataraja core is *application* Python: long-lived async services, type-driven domain models, layered
 architecture, concurrency primitives, test suites, ORMs. The skills transfer (you already think in
 idempotency, retries, exit codes) but the **discipline is different**. This is your single biggest gap,
 and it's why this doc adds **Stage 0.5** before the firehose.
@@ -70,7 +70,7 @@ learning. 🔴 **NEW** = genuinely new domain; budget real time and don't rush i
 
 Don't relearn these. Elevate each one level and make it visible across the build.
 
-| Your strength | Current level | The architect-level move in Helios | Where it lands |
+| Your strength | Current level | The architect-level move in Nataraja | Where it lands |
 |---|---|---|---|
 | **Kubernetes** | operate clusters | **author a custom Operator + CRD** that provisions tenants/preview-envs; admission policy as code | Stages 8 + 10 |
 | **Observability** | run the stack | **instrument the system you built** end-to-end (OTel across async/Kafka/gRPC), define **SLOs + burn-rate alerts** from app metrics, profile hot paths | Stage 12 (uses 3,4,5) |

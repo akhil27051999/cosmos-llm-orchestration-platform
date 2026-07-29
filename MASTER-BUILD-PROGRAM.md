@@ -1,4 +1,4 @@
-# Helios — The Complete Build Program (6–12 months, "learn everything")
+# Nataraja — The Complete Build Program (6–12 months, "learn everything")
 
 > **This is now the master spine.** No time pressure: the goal is maximal, coherent complexity — a production-grade, multi-cloud, agentic platform that exercises every layer a Cloud Solution Architect owns. You write **100% of the code**; this doc is the map, the full technology catalog, the staged build, and what to refer for each piece. **No code here.**
 >
@@ -6,14 +6,14 @@
 
 ---
 
-## 0. The vision — what Helios becomes at full scope
+## 0. The vision — what Nataraja becomes at full scope
 
 A multi-tenant, event-driven **agent-orchestration platform**: users submit goals; the platform runs autonomous LLM agents (plan → act → observe loops with tool use and RAG) on a worker fleet, routed across providers under rate-limit + health constraints, with every trajectory persisted, billed, observable, and A/B-testable — deployed across regions on real cloud infra, with a self-service frontend and per-tenant preview environments.
 
 That single system legitimately requires: 3+ languages, polyglot persistence (5 datastore types), an event-streaming backbone, service mesh, a custom Kubernetes operator, multi-region cloud infra, real identity, supply-chain security, full observability, chaos engineering, an experimentation framework, and a frontend. That's the point — it's the vehicle to learn all of it.
 
 ### It covers all three Emergent flagship design problems
-1. **Agent orchestration platform** → the core of Helios (Stages 1–8).
+1. **Agent orchestration platform** → the core of Nataraja (Stages 1–8).
 2. **Experimentation / A-B framework for agent configs** → Stage 9.
 3. **Deployment pipeline with per-user preview environments** → Stage 10.
 
@@ -96,7 +96,7 @@ Described in planes; you'll draw the C4 versions yourself.
 - **Tracks:** T1, T13, T11. **Refer:** "A Tour of Go" + "Effective Go" + "Go by Example"; Rob Pike's Go concurrency talks; gRPC docs + Protobuf guide; Istio/Linkerd docs. ADR: "why Go for the worker," "why gRPC internally."
 
 ### Stage 8 — Kubernetes deep + custom Operator + event-driven autoscaling
-- **Build:** production k8s (RBAC, NetworkPolicies, PodSecurity, PDB); **KEDA** autoscaling on **Kafka consumer lag / queue depth**; **build a custom Operator + CRD** (e.g. an `AgentJob` or `HeliosTenant` CRD); admission control (**Kyverno/OPA**); StatefulSets/operators for the data stores; **Kustomize** overlays.
+- **Build:** production k8s (RBAC, NetworkPolicies, PodSecurity, PDB); **KEDA** autoscaling on **Kafka consumer lag / queue depth**; **build a custom Operator + CRD** (e.g. an `AgentJob` or `NatarajaTenant` CRD); admission control (**Kyverno/OPA**); StatefulSets/operators for the data stores; **Kustomize** overlays.
 - **Tracks:** T7. **Refer:** Kubernetes docs (CRDs, controllers); **Kubebuilder** / Operator SDK book; KEDA docs; Kyverno/OPA Gatekeeper docs; *Programming Kubernetes* (O'Reilly).
 
 ### Stage 9 — Frontend + experimentation/A-B framework
