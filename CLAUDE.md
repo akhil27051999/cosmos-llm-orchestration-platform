@@ -23,6 +23,9 @@ full observability. The purpose is to learn — and be able to defend in intervi
 systems, resilience, data-at-scale, cloud architecture, and the AWS Well-Architected pillars.
 
 ## The plan documents (READ THESE FIRST)
+- **`LEARNING-PLAN.md`** — ⭐ THE CALENDAR. The depth-first **week-by-week schedule (~56 weeks, ~8–10 hrs/wk)**
+  that turns the 12 stages into dated phases, re-weighted for my background. **This supersedes every
+  "8-week plan" reference below.** Start a session by asking which stage/week I'm on here.
 - **`MASTER-BUILD-PROGRAM.md`** — ⭐ THE SPINE. The full 6–12 month program: the 16-track technology
   catalog, the maximal target architecture, and the **12-stage build** (Stage 0 foundations →
   1 async core → 2 polyglot/Mongo → 3 agent loop+RAG → 4 routing/resilience → 5 Kafka/CQRS/Saga/CDC →
@@ -52,7 +55,7 @@ criteria, pressure-test my "why" answers like an interviewer, and help me produc
 predate this rule exist in SCALING-ROADMAP.md — treat them as targets, not things to hand me.
 
 ## How a good session goes
-1. Ask which **week / phase** I'm on (see the 8-week plan).
+1. Ask which **stage / week** I'm on (see `LEARNING-PLAN.md`, the ~56-week schedule).
 2. Surface the concepts + readings I should hit before building that piece.
 3. After I build, review against that phase's acceptance criteria; hunt race conditions and weak tradeoffs.
 4. Help me write the ADR / diagram for what I just decided.
