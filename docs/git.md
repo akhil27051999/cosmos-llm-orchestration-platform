@@ -59,7 +59,7 @@ Everything in Git is a **content-addressable object** stored under `.git/objects
 │     ▼                                                                │
 │   tree    →  directory listing:  (mode, type, SHA, name) per entry   │
 │     │                                                                │
-│     ├──► blob  →  file content (bytes)                              │
+│     ├──► blob  →  file content (bytes)                               │
 │     └──► tree  →  subdirectory                                       │
 │                                                                      │
 │  tag    →  annotated tag:  object SHA + tagger + msg (for releases)  │
