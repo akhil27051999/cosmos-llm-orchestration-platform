@@ -491,7 +491,8 @@ CSS = """
 .conn .arrow{position:absolute;bottom:-3px;color:var(--line);font-size:12px}
 .cross-divider{text-align:center;margin:22px 0 14px;font:700 10px/1 ui-monospace,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--faint)}
 /* isometric mode */
-.diagram.iso{transform:perspective(2400px) rotateX(51deg) rotateZ(-42deg);transform-style:preserve-3d;gap:16px;margin:40px auto 120px;width:78%}
+.iso-wrap{overflow:hidden}
+.diagram.iso{transform:perspective(2600px) rotateX(46deg) rotateZ(-40deg) scale(.9);transform-origin:top center;transform-style:preserve-3d;gap:20px;margin:0 auto;width:80%}
 .diagram.iso .conn,.diagram.iso .cross-divider{display:none}
 .diagram.iso .band{box-shadow:-24px 24px 40px -18px rgba(0,0,0,.8);border-top:1px solid rgba(255,255,255,.12)}
 .diagram.iso .band::after{content:"";position:absolute;left:0;right:0;bottom:-10px;height:10px;background:var(--c);opacity:.35;transform:skewX(-45deg);transform-origin:top;border-radius:0 0 10px 10px}
