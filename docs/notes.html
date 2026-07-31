@@ -150,6 +150,7 @@
 
     <nav class="nav" id="nav">
       <a href="#l1"><span class="done">●</span> 1 · Async &amp; Event Loop</a>
+      <a href="#l2"><span class="done">●</span> 2 · Types &amp; Pydantic</a>
       <a class="themebtn" onclick="document.documentElement.setAttribute('data-theme', (document.documentElement.getAttribute('data-theme')==='light'?'dark':'light'))">◑ theme</a>
     </nav>
 
@@ -286,6 +287,81 @@
       </div>
     </section>
 
-    <div class="foot">🔱 Nataraja — Learning Notes · Stage 0.5 · updated as each concept is taught · next: L2 — Types &amp; Pydantic</div>
+    <!-- ================= LESSON 2 ================= -->
+    <section class="lesson" id="l2">
+      <div class="lesson-h"><span class="lnum">L2</span><h2>Types &amp; Pydantic</h2><span class="tag">labels for data + a guard at the door</span></div>
+
+      <h3 class="step"><span class="n">1</span>How a Python variable really works</h3>
+      <p>A variable name is just a <strong>sticky tag you put on a box (an object)</strong>. The <em>type lives on the box, not the tag</em> — and you can peel the tag off and stick it on a different box anytime.</p>
+      <figure>
+        <figcaption>A variable is a tag you stick on an object</figcaption>
+        <div class="flow">
+          <div class="fnode"><code>x</code> &nbsp;──tag──▶&nbsp; [ int · 5 ]</div>
+          <div class="farrow">▼ reassign — just move the tag</div>
+          <div class="fnode"><code>x</code> &nbsp;──tag──▶&nbsp; [ str · "hi" ]</div>
+        </div>
+      </figure>
+      <p>This is <strong>dynamic typing</strong>. Breezy for scripts, but risky at scale: a wrong-type value rides silently through five functions and explodes far away. Application Python tames this with <strong>types</strong>.</p>
+
+      <h3 class="step"><span class="n">2</span>Type hints are <em>labels</em> — ignored at runtime</h3>
+      <p>You label functions: <code>def add(a: int, b: int) -&gt; int</code>. But the Python interpreter <strong>does not enforce</strong> them — <code>add("x","y")</code> still runs.</p>
+      <div class="callout analogy"><span class="ct">📦 Analogy</span>A type hint is like writing <strong>“FRAGILE — GLASS”</strong> on a box. The label doesn't physically stop someone packing a brick — it's guidance for <strong>humans and tools</strong>. Two “guards” read those labels for you 👇</div>
+
+      <h3 class="step"><span class="n">3</span>Guard #1 — <code>mypy</code> (the inspector, before the flight)</h3>
+      <p><code>mypy</code> reads your labels and checks your code <strong>before it runs</strong>: <code>add("x", 1)</code> → <span style="color:var(--blocked)">✗ expected int, got str</span>.</p>
+      <div class="callout analogy"><span class="ct">🛫 Analogy</span><strong>mypy = the airport inspector who X-rays every labeled box at check-in</strong> — catching “you said glass but packed a brick” <em>before</em> the plane departs, not at 30,000 ft (3am in prod). Put it in CI and a whole class of bugs dies at dev time.</div>
+      <div class="callout insight"><span class="ct">🔤 The typing words you'll use</span>
+        <code>list[int]</code>, <code>dict[str, float]</code> · <code>str | None</code> (optional) · <code>Literal["pending","running","done"]</code> (only these exact values) · <code>Protocol</code> (“anything with these methods fits” — for ports/adapters).</div>
+
+      <h3 class="step"><span class="n">4</span>Guard #2 — Pydantic (customs, at the border)</h3>
+      <p>Hints don't check <strong>incoming data</strong>. When a client sends <code>{"priority":"abc"}</code>, plain Python won't stop it landing in an int field. At a <strong>trust boundary</strong> (API request, config, third-party data) you need <strong>runtime</strong> checking — that's <strong>Pydantic v2</strong>: it parses, validates, and coerces, and rejects bad input loudly.</p>
+      <div class="callout analogy"><span class="ct">🛃 Analogy</span><strong>Pydantic = the customs officer at the border</strong> — opens each incoming bag, checks it matches the declared contents, converts where sensible, and loudly rejects what's wrong. (v2's core is Rust → fast; <strong>FastAPI uses it automatically</strong> → clean <code>422</code> for free.)</div>
+      <figure>
+        <figcaption>How a request enters your app</figcaption>
+        <div class="flow">
+          <div class="fnode">Incoming JSON (untrusted) · <code>{"prompt":"hi","priority":"3"}</code></div>
+          <div class="farrow">▼</div>
+          <div class="fnode accent">PYDANTIC — parse · validate · coerce</div>
+          <div class="fsplit">
+            <div class="fbranch"><span class="blabel yes">VALID</span><div class="farrow">▼</div><div class="fnode">clean typed object → your code</div></div>
+            <div class="fbranch"><span class="blabel no">INVALID</span><div class="farrow">▼</div><div class="fnode">ValidationError → 422 to client</div></div>
+          </div>
+        </div>
+      </figure>
+
+      <h3 class="step"><span class="n">5</span>The pattern: validate at the edges, trust the inside</h3>
+      <figure>
+        <figcaption>Two zones, two guards</figcaption>
+        <div class="lanes">
+          <div class="lane" style="border-color:var(--violet)"><div class="lh" style="color:var(--violet)">EDGE — untrusted</div><div class="lb">API requests, config files, third-party responses → <strong>Pydantic validates here, once.</strong></div></div>
+          <div class="lane" style="border-color:var(--work)"><div class="lh" style="color:var(--work)">CORE — trusted</div><div class="lb">Already-validated typed objects flow freely → <strong>mypy checks your code</strong>; no repeated runtime validation.</div></div>
+        </div>
+      </figure>
+      <div class="callout analogy"><span class="ct">🛂 Analogy</span>Airport security screens you <strong>once</strong> at the entrance; inside the secure zone you're trusted — nobody re-screens at every gate. Pydantic at the doors, plain typed objects inside.</div>
+      <div class="bridge callout"><span class="ct">🛠️ Your DevOps bridge</span>This is <strong>JSON Schema / OpenAPI request validation / Terraform variable type constraints</strong> — the same idea, now living inside your Python at its boundary.</div>
+
+      <div class="cheat"><span class="ct">📝 Cheat-sheet</span>
+        <ul>
+          <li>A variable is a tag; the type lives on the <strong>object</strong>, not the name (dynamic typing).</li>
+          <li>Type hints are labels — the interpreter <strong>ignores</strong> them at runtime.</li>
+          <li><strong>mypy</strong> = static inspector: catches type bugs <strong>before</strong> you run (put it in CI).</li>
+          <li><strong>Pydantic</strong> = runtime customs at the boundary: parse, coerce, reject bad input.</li>
+          <li>Use <strong>both</strong>: mypy for your code, Pydantic for untrusted input.</li>
+          <li>Pattern: <strong>validate at the edges, trust the typed core.</strong></li>
+          <li>Handy types: <code>list[int]</code>, <code>str | None</code>, <code>Literal[...]</code>, <code>Protocol</code>.</li>
+          <li>FastAPI uses Pydantic automatically → clean 422 on bad requests.</li>
+        </ul>
+      </div>
+
+      <div class="selfcheck"><span class="ct">✅ Self-check</span>
+        <ol>
+          <li>Is a Python type attached to the <em>name</em> or the <em>object</em>? Why does that make hints “not enforced” at runtime?</li>
+          <li>You receive a webhook from Stripe. Which guard applies — mypy, Pydantic, or both — and <em>where exactly</em> does each one act?</li>
+          <li>Why is <code>status: Literal["pending","running","done"]</code> safer than <code>status: str</code>?</li>
+        </ol>
+      </div>
+    </section>
+
+    <div class="foot">🔱 Nataraja — Learning Notes · Stage 0.5 · updated as each concept is taught · next: L3 — Generators &amp; Coroutines</div>
   </div>
 </div>
