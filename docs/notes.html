@@ -121,6 +121,21 @@
   .selfcheck .ct{font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--gold); font-weight:700; margin-bottom:6px}
   .selfcheck ol{margin:6px 0 0; padding-left:20px} .selfcheck li{margin:6px 0; font-size:13.5px; color:var(--text)}
 
+  /* self-check review (graded answers) */
+  .review{margin-top:18px; border:1px solid var(--line); border-radius:12px; overflow:hidden}
+  .review-h{display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--panel-2); padding:11px 15px; border-bottom:1px solid var(--line)}
+  .review-h .ct{font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--gold); font-weight:700}
+  .score{margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--ok); border:1px solid var(--ok); border-radius:999px; padding:3px 10px}
+  .qa{padding:12px 15px; border-bottom:1px solid var(--line-soft)}
+  .qa:last-child{border-bottom:0}
+  .qa .q{font-weight:700; font-size:13.5px; display:flex; gap:8px; align-items:flex-start}
+  .qa .vb{font-family:var(--mono); font-size:10px; font-weight:700; border-radius:6px; padding:1px 6px; flex:none; margin-top:1px}
+  .vb.ok{color:var(--ok); border:1px solid var(--ok)} .vb.warn{color:var(--wait); border:1px solid var(--wait)}
+  .qa .ans{font-size:12.5px; color:var(--dim); margin:6px 0 0; padding-left:10px; border-left:2px solid var(--line)}
+  .qa .ans b{color:var(--text)}
+  .qa .fb{font-size:12.5px; color:var(--text); margin:7px 0 0}
+  .qa .fb b{color:var(--accent)}
+
   .foot{text-align:center; color:var(--faint); font-family:var(--mono); font-size:11.5px; margin-top:34px; border-top:1px solid var(--line-soft); padding-top:16px}
   @media (max-width:560px){ .fsplit{gap:12px} .tl-lab{width:40px} }
 </style>
@@ -249,6 +264,25 @@
           <li>Why does async help an app that talks to a DB and an API, but not one doing heavy math?</li>
           <li>A teammate writes <code>time.sleep(3)</code> in an async function. What happens to the other 500 users, and what should they have written?</li>
         </ol>
+      </div>
+
+      <div class="review">
+        <div class="review-h"><span class="ct">🧭 My answers &amp; feedback</span><span class="score">Understanding 3/3 · Precision ~9/10</span></div>
+        <div class="qa">
+          <div class="q"><span class="vb ok">✅</span><span>Q1 · What is “kitchen cooking,” and what is <code>await</code>?</span></div>
+          <p class="ans"><b>My answer:</b> Kitchen cooking = I/O wait (DB / network / AI calls). <code>await</code> = tell the waiter (thread) not to idle while food cooks — go take other orders.</p>
+          <p class="fb"><b>Correct.</b> Precision: <code>await</code> is the point where the task hands control <em>back to the event loop</em> — that's what frees it to serve others.</p>
+        </div>
+        <div class="qa">
+          <div class="q"><span class="vb warn">⚠️</span><span>Q2 · Why does async help I/O apps but not heavy math?</span></div>
+          <p class="ans"><b>My answer:</b> One thread never idles, handling several tasks at once; heavy math needs multiple processors (multiple cooks).</p>
+          <p class="fb"><b>Right conclusion — one word to fix:</b> async is <b>concurrent</b> (interleaved on ONE thread — one thing at a time, overlapping the <em>waits</em>), <b>not parallel</b>. Heavy math is CPU-bound: the CPU is busy the whole time so there are <em>no waits to overlap</em>, and Python's GIL runs one thread at a time anyway → you need multiple <b>processes</b>.</p>
+        </div>
+        <div class="qa">
+          <div class="q"><span class="vb ok">✅</span><span>Q3 · A teammate writes <code>time.sleep(3)</code> in an async function.</span></div>
+          <p class="ans"><b>My answer:</b> The one thread freezes for 3s; B, C, D… all wait. Use <code>asyncio.sleep(3)</code> so the request pauses without holding the thread.</p>
+          <p class="fb"><b>Correct.</b> Precision: <code>asyncio.sleep</code> <em>yields to the event loop</em>, which is why the other ~500 users keep being served during those 3s.</p>
+        </div>
       </div>
     </section>
 
