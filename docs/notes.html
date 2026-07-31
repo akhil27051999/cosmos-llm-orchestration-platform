@@ -1,0 +1,257 @@
+<title>Nataraja — Learning Notes</title>
+<style>
+  :root{
+    --bg:#0C0A14; --panel:#15111F; --panel-2:#1C1727; --line:#2C2638; --line-soft:#221D30;
+    --text:#ECEAF2; --dim:#A7A2B6; --faint:#6F6982;
+    --accent:#F2913D; --flare:#F0522A; --gold:#EAB94C; --violet:#8A6CE6;
+    --work:#3EB6A0; --wait:#EAA53A; --blocked:#F0623C; --ok:#3EB6A0;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --font:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --radius:14px;
+  }
+  @media (prefers-color-scheme:light){
+    :root{
+      --bg:#FAF7F2; --panel:#FFFFFF; --panel-2:#F6F2EA; --line:#E7E0D3; --line-soft:#EFEAE0;
+      --text:#211D28; --dim:#5D5769; --faint:#928B9E;
+      --accent:#C4611E; --flare:#D2481F; --gold:#A87A16; --violet:#6E55C8;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#FAF7F2; --panel:#FFFFFF; --panel-2:#F6F2EA; --line:#E7E0D3; --line-soft:#EFEAE0;
+    --text:#211D28; --dim:#5D5769; --faint:#928B9E;
+    --accent:#C4611E; --flare:#D2481F; --gold:#A87A16; --violet:#6E55C8;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0C0A14; --panel:#15111F; --panel-2:#1C1727; --line:#2C2638; --line-soft:#221D30;
+    --text:#ECEAF2; --dim:#A7A2B6; --faint:#6F6982;
+    --accent:#F2913D; --flare:#F0522A; --gold:#EAB94C; --violet:#8A6CE6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0}
+  .page{
+    background:
+      radial-gradient(900px 380px at 50% -80px, rgba(138,108,230,.16), transparent 60%),
+      radial-gradient(700px 300px at 50% -60px, rgba(242,145,61,.10), transparent 62%),
+      var(--bg);
+    color:var(--text); font-family:var(--font); line-height:1.62; min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:900px; margin:0 auto; padding:0 22px 90px}
+
+  /* header */
+  header.top{text-align:center; padding:46px 0 22px}
+  .kick{font-family:var(--mono); font-size:12px; letter-spacing:.28em; text-transform:uppercase; color:var(--accent); font-weight:600}
+  h1.title{font-size:clamp(30px,6vw,46px); font-weight:800; letter-spacing:-.02em; margin:10px 0 6px;
+    background:linear-gradient(180deg,var(--text) 30%, var(--accent)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent}
+  .subtitle{color:var(--dim); font-size:15px}
+
+  /* nav */
+  .nav{position:sticky; top:0; z-index:10; display:flex; flex-wrap:wrap; gap:8px; justify-content:center;
+    padding:12px 0; margin-bottom:8px;
+    background:color-mix(in srgb,var(--bg) 84%, transparent); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line-soft)}
+  .nav a{font-family:var(--mono); font-size:12px; color:var(--dim); text-decoration:none;
+    border:1px solid var(--line); border-radius:999px; padding:5px 12px; transition:.15s}
+  .nav a:hover{color:var(--text); border-color:var(--accent)}
+  .nav a .done{color:var(--ok)}
+  .themebtn{cursor:pointer; background:var(--panel); color:var(--dim)}
+
+  /* lesson */
+  .lesson{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    padding:26px 26px 28px; margin-top:26px; box-shadow:0 16px 40px -24px rgba(0,0,0,.6)}
+  .lesson-h{display:flex; align-items:baseline; gap:12px; border-bottom:2px solid var(--line); padding-bottom:14px; margin-bottom:20px}
+  .lnum{font-family:var(--mono); font-weight:700; font-size:13px; color:#1a1320; background:var(--accent); border-radius:8px; padding:5px 10px}
+  .lesson-h h2{font-size:22px; font-weight:800; letter-spacing:-.01em; margin:0}
+  .lesson-h .tag{margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--faint)}
+  h3.step{font-size:16.5px; font-weight:750; margin:24px 0 8px; display:flex; gap:9px; align-items:center}
+  h3.step .n{font-family:var(--mono); font-size:12px; color:var(--accent); border:1px solid var(--line); border-radius:6px; padding:2px 7px}
+  p{margin:9px 0}
+  .lesson p, .lesson li{color:var(--text)}
+  strong{color:var(--text)}
+  code{font-family:var(--mono); font-size:.88em; background:var(--panel-2); border:1px solid var(--line); border-radius:5px; padding:1px 6px; color:var(--gold)}
+
+  /* callouts */
+  .callout{border-radius:10px; padding:13px 15px; margin:16px 0; font-size:14.5px; border:1px solid var(--line); background:var(--panel-2)}
+  .callout .ct{font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; font-weight:700; margin-bottom:5px; display:block}
+  .analogy{border-left:3px solid var(--violet)} .analogy .ct{color:var(--violet)}
+  .insight{border-left:3px solid var(--gold)} .insight .ct{color:var(--gold)}
+  .warn{border-left:3px solid var(--blocked)} .warn .ct{color:var(--blocked)}
+  .bridge{border-left:3px solid var(--work)} .bridge .ct{color:var(--work)}
+
+  /* diagram frame */
+  figure{margin:20px 0; background:var(--panel-2); border:1px solid var(--line); border-radius:12px; padding:18px 16px}
+  figcaption{font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--faint); margin-bottom:14px; text-align:center}
+
+  /* timeline diagram */
+  .tl-row{display:flex; align-items:center; gap:10px; margin:7px 0}
+  .tl-lab{font-family:var(--mono); font-size:11px; color:var(--dim); width:52px; flex:none; text-align:right}
+  .tl{display:flex; gap:3px; flex:1; min-width:0}
+  .seg{font-family:var(--mono); font-size:10.5px; color:#10131a; border-radius:5px; padding:6px 4px; text-align:center; white-space:nowrap; overflow:hidden; font-weight:600}
+  .seg.work{background:var(--work)} .seg.wait{background:var(--wait)} .seg.blocked{background:var(--blocked); color:#fff}
+  .seg.idle{background:transparent; border:1px dashed var(--line); color:var(--faint)}
+  .axis{font-family:var(--mono); font-size:10px; color:var(--faint); text-align:right; margin-top:4px}
+  .legend{display:flex; gap:14px; justify-content:center; margin-top:12px; font-size:11.5px; color:var(--dim); flex-wrap:wrap}
+  .legend span{display:inline-flex; align-items:center; gap:6px}
+  .legend i{width:12px; height:12px; border-radius:3px; display:inline-block}
+
+  /* flow diagram */
+  .flow{display:flex; flex-direction:column; align-items:center; gap:0}
+  .fnode{background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:9px 15px; font-size:13px; text-align:center; max-width:420px}
+  .fnode.accent{border-color:var(--accent); color:var(--accent); font-weight:600}
+  .farrow{color:var(--faint); font-size:15px; line-height:1.1; margin:3px 0}
+  .fsplit{display:flex; gap:26px; align-items:flex-start; justify-content:center}
+  .fbranch{display:flex; flex-direction:column; align-items:center; gap:0}
+  .blabel{font-family:var(--mono); font-size:11px; font-weight:700; padding:2px 8px; border-radius:6px}
+  .blabel.no{color:var(--blocked); border:1px solid var(--blocked)} .blabel.yes{color:var(--ok); border:1px solid var(--ok)}
+
+  /* two-lane await */
+  .lanes{display:grid; grid-template-columns:1fr; gap:10px}
+  .lane{border:1px solid var(--line); border-radius:9px; padding:10px 12px; background:var(--panel)}
+  .lane .lh{font-family:var(--mono); font-size:11px; color:var(--faint); text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px}
+  .lane .lb{font-size:13px; color:var(--dim)}
+
+  /* cheat sheet */
+  .cheat{background:linear-gradient(160deg, color-mix(in srgb,var(--accent) 12%, var(--panel)), var(--panel)); border:1px solid color-mix(in srgb,var(--accent) 30%, var(--line)); border-radius:12px; padding:16px 18px; margin:22px 0}
+  .cheat .ct{font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent); font-weight:700; margin-bottom:8px}
+  .cheat ul{margin:0; padding-left:18px}
+  .cheat li{margin:5px 0; font-size:13.5px}
+
+  /* self check */
+  .selfcheck{border:1px dashed var(--line); border-radius:12px; padding:14px 18px; margin-top:20px}
+  .selfcheck .ct{font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--gold); font-weight:700; margin-bottom:6px}
+  .selfcheck ol{margin:6px 0 0; padding-left:20px} .selfcheck li{margin:6px 0; font-size:13.5px; color:var(--text)}
+
+  .foot{text-align:center; color:var(--faint); font-family:var(--mono); font-size:11.5px; margin-top:34px; border-top:1px solid var(--line-soft); padding-top:16px}
+  @media (max-width:560px){ .fsplit{gap:12px} .tl-lab{width:40px} }
+</style>
+
+<div class="page">
+  <div class="wrap">
+    <header class="top">
+      <div class="kick">🔱 Nataraja · Learning Notes</div>
+      <h1 class="title">Python &amp; Async Foundations</h1>
+      <div class="subtitle">Stage 0.5 — plain-English concepts, analogies &amp; diagrams. This page grows as we learn.</div>
+    </header>
+
+    <nav class="nav" id="nav">
+      <a href="#l1"><span class="done">●</span> 1 · Async &amp; Event Loop</a>
+      <a class="themebtn" onclick="document.documentElement.setAttribute('data-theme', (document.documentElement.getAttribute('data-theme')==='light'?'dark':'light'))">◑ theme</a>
+    </nav>
+
+    <!-- ================= LESSON 1 ================= -->
+    <section class="lesson" id="l1">
+      <div class="lesson-h"><span class="lnum">L1</span><h2>Async &amp; the Event Loop</h2><span class="tag">how one worker serves thousands</span></div>
+
+      <h3 class="step"><span class="n">1</span>The core idea</h3>
+      <p>Your app spends most of its life <strong>waiting</strong> — for the database, the internet, the AI. <strong>Async</strong> is the trick of doing other useful work <em>during those waits</em>, using just <strong>one worker</strong>.</p>
+
+      <div class="callout analogy"><span class="ct">🍽️ Analogy — one waiter, many tables</span>
+        A restaurant with <strong>one waiter</strong>. The slow way: take Table 1's order, then <em>stand in the kitchen</em> until it's cooked before touching Table 2. The smart way: hand Table 1's order to the kitchen and <strong>immediately</strong> serve Table 2 while it cooks; deliver when the bell rings. One waiter, many tables — because the <em>cooking</em> (waiting) is the slow part, not the waiter.
+        <br><br>
+        <strong>Waiter</strong> = one thread · <strong>Tables</strong> = requests · <strong>Kitchen cooking</strong> = I/O wait · <strong>“serve another table while it cooks”</strong> = <code>await</code>.
+      </div>
+
+      <h3 class="step"><span class="n">2</span>Sync vs Async — see the difference</h3>
+      <figure>
+        <figcaption>Synchronous — the worker sits idle during every wait (slow)</figcaption>
+        <div class="tl-row"><span class="tl-lab">Req A</span><div class="tl">
+          <span class="seg work" style="flex:1">work</span><span class="seg wait" style="flex:2">wait (DB)</span><span class="seg work" style="flex:1">work</span></div></div>
+        <div class="tl-row"><span class="tl-lab">Req B</span><div class="tl">
+          <span class="seg idle" style="flex:4">…B waits for A to fully finish…</span><span class="seg work" style="flex:1">work</span><span class="seg wait" style="flex:2">wait</span><span class="seg work" style="flex:1">work</span></div></div>
+        <div class="axis">time →</div>
+      </figure>
+      <figure>
+        <figcaption>Asynchronous — one thread overlaps the WAITS (fast)</figcaption>
+        <div class="tl-row"><span class="tl-lab">Req A</span><div class="tl">
+          <span class="seg work" style="flex:1">work</span><span class="seg wait" style="flex:2">wait (DB)</span><span class="seg work" style="flex:1">work</span></div></div>
+        <div class="tl-row"><span class="tl-lab">Req B</span><div class="tl">
+          <span class="seg idle" style="flex:1">·</span><span class="seg work" style="flex:1">work</span><span class="seg wait" style="flex:2">wait</span><span class="seg work" style="flex:1">work</span></div></div>
+        <div class="axis">time → &nbsp; (while A waits on the DB, the thread runs B)</div>
+        <div class="legend"><span><i style="background:var(--work)"></i>work (using CPU)</span><span><i style="background:var(--wait)"></i>waiting on I/O</span><span><i style="border:1px dashed var(--line)"></i>idle / not started</span></div>
+      </figure>
+      <div class="callout insight"><span class="ct">💡 Key insight</span>Async doesn't make one task faster — it stops the worker from <strong>sitting idle</strong>, so many tasks finish in the same wall-clock time.</div>
+
+      <h3 class="step"><span class="n">3</span>What is the “event loop”?</h3>
+      <p>The <strong>event loop</strong> is the waiter's brain: a <code>while True:</code> that runs forever asking one question — <em>“who's ready for their next step?”</em> — and running whoever is ready.</p>
+      <figure>
+        <figcaption>The event loop cycle</figcaption>
+        <div class="flow">
+          <div class="fnode accent">EVENT LOOP · one thread, runs forever</div>
+          <div class="farrow">▼</div>
+          <div class="fnode">pick a task that is <strong>READY</strong></div>
+          <div class="farrow">▼</div>
+          <div class="fnode">run it until it says <code>await</code></div>
+          <div class="farrow">▼</div>
+          <div class="fnode">is the awaited thing ready?</div>
+          <div class="farrow">▼</div>
+          <div class="fsplit">
+            <div class="fbranch"><span class="blabel no">NO</span><div class="farrow">▼</div><div class="fnode">park it · “wake me later”</div></div>
+            <div class="fbranch"><span class="blabel yes">YES</span><div class="farrow">▼</div><div class="fnode">keep running it</div></div>
+          </div>
+          <div class="farrow">▼</div>
+          <div class="fnode">pick the next ready task &nbsp;↺ repeat</div>
+        </div>
+      </figure>
+
+      <h3 class="step"><span class="n">4</span>What happens at <code>await</code>?</h3>
+      <p><code>await</code> means: <strong>“this might take a while — pause me, go help others, wake me when my result is ready.”</strong></p>
+      <figure>
+        <figcaption>await = pause here, resume later</figcaption>
+        <div class="lanes">
+          <div class="lane"><div class="lh">Your task</div><div class="lb">runs → hits <code>await db.fetch()</code> → <strong>“not ready, park me”</strong> → &nbsp;💤&nbsp; → woken with result → continues</div></div>
+          <div class="lane"><div class="lh">Event loop (meanwhile)</div><div class="lb">runs <strong>other tasks</strong> while the DB works → DB result arrives → resumes your task where it paused</div></div>
+        </div>
+      </figure>
+      <div class="callout insight"><span class="ct">💡 The subtle part (bites people later)</span>Between two <code>await</code>s your code runs <strong>uninterrupted</strong> — nobody touches your variables. But <strong>across an <code>await</code>, the world can change</strong> (other tasks ran while you were paused). This is the seed of the “async race conditions” we'll handle in later stages.</div>
+
+      <h3 class="step"><span class="n">5</span>The #1 sin: blocking the loop</h3>
+      <p>Because there's <strong>one</strong> worker, if a task refuses to <code>await</code> and does something slow <em>synchronously</em>, the whole app <strong>freezes</strong>.</p>
+      <figure>
+        <figcaption>Polite waiting vs blocking the one thread</figcaption>
+        <div class="tl-row"><span class="tl-lab">GOOD</span><div class="tl">
+          <span class="seg work" style="flex:1">A work</span><span class="seg wait" style="flex:2">A awaits →</span><span class="seg work" style="flex:1">B runs</span><span class="seg work" style="flex:1">C runs</span></div></div>
+        <div class="tl-row"><span class="tl-lab">BAD</span><div class="tl">
+          <span class="seg work" style="flex:1">A work</span><span class="seg blocked" style="flex:4">🔒 time.sleep(5) — whole loop FROZEN — B,C,D all stuck</span></div></div>
+        <div class="axis">time →</div>
+      </figure>
+      <div class="callout warn"><span class="ct">🚫 The rule</span>In async code, never call a <strong>blocking</strong> function. Use the async version:
+        <br><code>time.sleep()</code> ❌ → <code>await asyncio.sleep()</code> ✅ &nbsp;·&nbsp; <code>requests.get()</code> ❌ → <code>await httpx.get()</code> ✅ &nbsp;·&nbsp; sync DB driver ❌ → <strong>async</strong> driver ✅ &nbsp;·&nbsp; heavy CPU work → push to a separate worker pool.</div>
+      <div class="callout analogy"><span class="ct">🍽️ Analogy</span>Blocking = the waiter walks into the kitchen and <em>personally cooks</em> one dish while every other table sits ignored.</div>
+
+      <h3 class="step"><span class="n">6</span>Async is NOT parallelism</h3>
+      <p>Everything above happens on <strong>one worker, one CPU core</strong>. Async overlaps <em>waiting</em>, not <em>computing</em>.</p>
+      <figure>
+        <figcaption>Two different tools for two different problems</figcaption>
+        <div class="lanes">
+          <div class="lane" style="border-color:var(--work)"><div class="lh" style="color:var(--work)">ASYNC = concurrency</div><div class="lb">1 waiter, many tables. Overlaps <strong>WAITS</strong>. → Use for <strong>I/O-bound</strong> work (DB, network, AI). <em>This is your whole platform.</em></div></div>
+          <div class="lane" style="border-color:var(--violet)"><div class="lh" style="color:var(--violet)">PARALLEL = many cooks</div><div class="lb">Many workers/cores. Overlaps <strong>COMPUTING</strong>. → Use for <strong>CPU-bound</strong> work (heavy math). Needs multiple <strong>processes</strong>.</div></div>
+        </div>
+      </figure>
+
+      <div class="bridge callout"><span class="ct">🛠️ Your DevOps bridge</span>This is exactly how <strong>nginx / Envoy</strong> serve tens of thousands of connections on a few threads with an epoll/kqueue event loop. And “blocking the loop” is the same “one bad call wedged the whole pod” incident you've debugged — now you know the mechanism.</div>
+
+      <div class="cheat"><span class="ct">📝 Cheat-sheet — the whole lesson in 8 lines</span>
+        <ul>
+          <li>App spends most time <strong>waiting</strong> → async fills those waits with other work.</li>
+          <li>1 thread + event loop = one waiter serving many tables.</li>
+          <li><code>await</code> = “pause me, help others, wake me when ready.”</li>
+          <li>Between awaits: uninterrupted. Across an await: the world may have changed.</li>
+          <li>A blocking call on the loop = the whole app freezes (cardinal sin).</li>
+          <li>Fix: always use async versions (<code>asyncio.sleep</code>, <code>httpx</code>, async DB driver).</li>
+          <li>async = concurrency (overlap <strong>waits</strong>), NOT parallelism (overlap <strong>CPU</strong>).</li>
+          <li>I/O-bound → async. &nbsp; CPU-bound → processes.</li>
+        </ul>
+      </div>
+
+      <div class="selfcheck"><span class="ct">✅ Self-check</span>
+        <ol>
+          <li>In the waiter analogy, what is the “kitchen cooking,” and what is <code>await</code>?</li>
+          <li>Why does async help an app that talks to a DB and an API, but not one doing heavy math?</li>
+          <li>A teammate writes <code>time.sleep(3)</code> in an async function. What happens to the other 500 users, and what should they have written?</li>
+        </ol>
+      </div>
+    </section>
+
+    <div class="foot">🔱 Nataraja — Learning Notes · Stage 0.5 · updated as each concept is taught · next: L2 — Types &amp; Pydantic</div>
+  </div>
+</div>
