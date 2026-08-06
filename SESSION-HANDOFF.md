@@ -34,18 +34,19 @@ The user **writes 100% of the implementation code themselves.** My role: teach c
 > To update from a new session, publish with the **same file path** OR pass the artifact **`url`** +
 > **`force:true`** (the scratchpad resets between sessions, so the version link needs re-anchoring).
 
-## 5. ⏳ WHERE WE STOPPED — the Learning Notes deepening
+## 5. ✅ DEEPENING COMPLETE — the whole Learning Notes notebook is at full depth
 `docs/notes.html` has **97 lessons**: Foundations 0.5 (Lessons 1–10) + Stages 0–12.
-We are rebuilding every stage to **"Lesson-1 depth"** (multiple explained step-sections, 2 diagrams,
-analogy + insight + warning/bridge callouts, cheat-sheet, self-check).
+Every stage is now at **"Lesson-1 depth"** (3 explained step-sections: problem → mechanism → nuance,
+2 diagrams, analogy + insight + warning/bridge callouts, cheat-sheet, self-check).
 
-**Done DEEP:** Foundations 0.5, and Stages **0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11**. ✅
-**STILL THIN (need deepening next):** Stage **12** — the last one. ⬅️ **RESUME HERE.**
-- ~~Stage 10 — Preview Environments (5 topics)~~ ✅ deepened (5e8d98d): 10·1 Ephemeral Envs, 10·2 vcluster vs Namespace, 10·3 external-dns & cert-manager, 10·4 Argo CD ApplicationSets, 10·5 Lifecycle & Teardown.
-- ~~Stage 11 — Cloud, IaC & Multi-Region (6 topics)~~ ✅ deepened (70df3a0): 11·1 VPC/SG-vs-NACL, 11·2 IAM & IRSA, 11·3 Managed Services, 11·4 Terraform/IaC, 11·5 Multi-Region DR ladder, 11·6 FinOps.
-- Stage 12 — Observability, SRE & Capstone (10 topics). **NOTE: for the last stage, the regex replaces up to the final `<div class="foot">…</div>` instead of the next stage-banner** (see §6 tip).
+**Done DEEP: EVERYTHING — Foundations 0.5 + Stages 0–12.** ✅✅✅ Nothing thin remains.
+- ~~Stage 10 — Preview Environments (5 topics)~~ ✅ (5e8d98d): 10·1 Ephemeral Envs, 10·2 vcluster vs Namespace, 10·3 external-dns & cert-manager, 10·4 Argo CD ApplicationSets, 10·5 Lifecycle & Teardown.
+- ~~Stage 11 — Cloud, IaC & Multi-Region (6 topics)~~ ✅ (70df3a0): 11·1 VPC/SG-vs-NACL, 11·2 IAM & IRSA, 11·3 Managed Services, 11·4 Terraform/IaC, 11·5 Multi-Region DR ladder, 11·6 FinOps.
+- ~~Stage 12 — Observability, SRE & Capstone (10 topics)~~ ✅ (ecd1318): 12·1 Three Pillars, 12·2 OpenTelemetry, 12·3 Prometheus, 12·4 Grafana/Loki, 12·5 Profiling, 12·6 SLO/SLI/Error Budgets, 12·7 Burn-Rate, 12·8 Chaos, 12·9 Supply-Chain (SBOM/cosign/SLSA), 12·10 Load Testing.
 
-Current git HEAD when this was written: `70df3a0` (both branches).
+**What's left (all OPTIONAL — see §7):** README "📚 Docs & Learning" index; a possible 3rd diagram on a few of the earlier deep stages; otherwise the notebook is done. Next real work is the *learning cadence* in §8 (teach → user builds → review), not more note-writing.
+
+Current git HEAD when this was written: `ecd1318` (both branches). Reminder: the light-theme PDF is regenerated via headless Chrome + a print wrapper that forces `print-color-adjust:exact` (so diagrams/callout tints print) and overrides the gradient-clipped `h1.title` to solid dark text; that wrapper makes the PDF ~20 MB.
 
 ## 6. HOW to continue the deepening (exact procedure)
 `docs/notes.html` is the source of truth (self-contained, no external deps). Each stage is a block that
