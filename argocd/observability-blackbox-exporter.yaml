@@ -12,7 +12,7 @@ spec:
       helm:
         valueFiles:
           - $values/helm/blackbox-exporter/values.yaml
-    - repoURL: https://github.com/akhil27051999/Flask-REST-API.git
+    - repoURL: https://github.com/akhil27051999/cosmos-llm-orchestration-platform.git
       targetRevision: main
       ref: values
   destination:

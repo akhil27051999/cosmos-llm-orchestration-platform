@@ -478,7 +478,7 @@ data "aws_iam_policy_document" "github_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:akhil27051999/Flask-REST-API:ref:refs/heads/main"]
+      values   = ["repo:akhil27051999/cosmos-llm-orchestration-platform:ref:refs/heads/main"]
     }
   }
 }
@@ -1702,7 +1702,7 @@ resource "aws_codepipeline" "flask_app" {
       output_artifacts = ["source_output"]
       configuration = {
         ConnectionArn    = aws_codestarconnections_connection.github.arn
-        FullRepositoryId = "akhil27051999/Flask-REST-API"
+        FullRepositoryId = "akhil27051999/cosmos-llm-orchestration-platform"
         BranchName       = "main"
       }
     }

@@ -380,7 +380,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/akhil27051999/Flask-REST-API.git
+    repoURL: https://github.com/akhil27051999/cosmos-llm-orchestration-platform.git
     targetRevision: main               # branch / tag / commit SHA
     path: helm/application             # folder in repo
     helm:
@@ -423,7 +423,7 @@ metadata:
   namespace: argocd
 spec:
   source:
-    repoURL: https://github.com/akhil27051999/Flask-REST-API.git
+    repoURL: https://github.com/akhil27051999/cosmos-llm-orchestration-platform.git
     targetRevision: main
     path: argocd                       # ← folder of Application YAMLs
     directory:
@@ -458,7 +458,7 @@ spec:
       helm:
         valueFiles:
           - $values/helm/prometheus/values.yaml   # ← from second source
-    - repoURL: https://github.com/akhil27051999/Flask-REST-API.git
+    - repoURL: https://github.com/akhil27051999/cosmos-llm-orchestration-platform.git
       targetRevision: main
       ref: values                                  # ← named ref used above
 ```

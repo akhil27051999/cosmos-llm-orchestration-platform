@@ -84,8 +84,8 @@ A REST API that manages student records (CRUD operations on a `Student` model wi
 ### 1. Clone & enter the repo
 
 ```bash
-git clone https://github.com/akhil27051999/Flask-REST-API.git
-cd Flask-REST-API
+git clone https://github.com/akhil27051999/cosmos-llm-orchestration-platform.git
+cd cosmos-llm-orchestration-platform
 ```
 
 ### 2. Create and activate a virtual environment
