@@ -71,6 +71,16 @@ begins with `<div class="stage-banner" id="sN">…</div>` followed by its `<sect
 4. Copy both into `docs/`, `git add`, commit on `main`, `git checkout dev && git merge main --ff-only`,
    push both, then **re-publish the notes artifact** (same file path, or url + force).
 
+> ⚠️ **Interactive-doc PDFs (roadmap, architecture) — print-snapshot gotcha.** Their content is
+> JS-generated and hidden until a scroll-reveal fires (`IntersectionObserver` adds `.in`; base state is
+> `opacity:0; transform:translateY(...)`). A headless print/screenshot never scrolls, so the export comes
+> out **blank**. When regenerating those PDFs the print wrapper MUST force the revealed state, e.g.
+> roadmap: `.phase,.stage{opacity:1!important;transform:none!important}` + `*{animation:none!important}`
+> + on-load JS `document.querySelectorAll('.phase').forEach(p=>p.classList.add('in'))`, click `#expandAll`,
+> and add `.open` to every `.stage`; architecture: `.band{opacity:1!important;transform:none!important}`.
+> Also override the gradient-clipped title (`.wordmark`/`h1.title`) to a solid color or it prints as a box.
+> The live HTML artifacts are unaffected (scroll-reveal works in a real browser) — this is PDF-only.
+
 ## 7. Housekeeping still open (optional)
 - Stray file `Desktop` at repo root = byte-identical duplicate of `README.md` (untracked) → can delete.
 - `.DS_Store` untracked → ignore/delete.
