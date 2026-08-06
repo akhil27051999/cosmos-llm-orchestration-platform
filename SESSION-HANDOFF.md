@@ -6,7 +6,7 @@
 ## 1. Project identity
 - **Name:** **Cosmos — Cloud-Native LLM Orchestration Platform** (was "Flask-REST-API", briefly "Helios", then "Nataraja"; renamed to Cosmos).
 - **GitHub repo:** `akhil27051999/cosmos-llm-orchestration-platform` (renamed; GitHub redirects old URLs).
-- **Local folder (unchanged by the rename):** `~/Desktop/Flask-REST-API` ← this is the working dir.
+- **Local folder:** `~/Desktop/cosmos` ← this is the working dir (renamed from `Flask-REST-API`).
 - **Branches:** `main` and `dev` — kept **identical** and pushed together every commit.
 - **Theme:** cosmic-violet + ring-of-fire, flame/ember accents, symbol 🌌 (was 🔱). Favicons: notes 📓, roadmap 🌌, architecture 🌌, study-guide 📘.
 
