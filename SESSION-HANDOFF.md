@@ -4,11 +4,11 @@
 > are and how to continue*. Pair it with `CLAUDE.md` (rules/persona) and `LEARNING-PLAN.md` (the plan).
 
 ## 1. Project identity
-- **Name:** **Cosmos — Cloud-Native LLM Orchestration Platform** (was "Flask-REST-API", briefly "Helios").
+- **Name:** **Cosmos — Cloud-Native LLM Orchestration Platform** (was "Flask-REST-API", briefly "Helios", then "Nataraja"; renamed to Cosmos).
 - **GitHub repo:** `akhil27051999/cosmos-llm-orchestration-platform` (renamed; GitHub redirects old URLs).
 - **Local folder (unchanged by the rename):** `~/Desktop/Flask-REST-API` ← this is the working dir.
 - **Branches:** `main` and `dev` — kept **identical** and pushed together every commit.
-- **Theme:** Cosmos / Shiva — ring-of-fire + cosmic-violet, flame/ember accents, 🌌. Favicons: notes 📓, roadmap 🌌, architecture 🌌, study-guide 📘.
+- **Theme:** cosmic-violet + ring-of-fire, flame/ember accents, symbol 🌌 (was 🔱). Favicons: notes 📓, roadmap 🌌, architecture 🌌, study-guide 📘.
 
 ## 2. THE HARD RULE (never break)
 The user **writes 100% of the implementation code themselves.** My role: teach concepts, design in prose
@@ -46,7 +46,7 @@ Every stage is now at **"Lesson-1 depth"** (3 explained step-sections: problem �
 
 **What's left (all OPTIONAL — see §7):** README "📚 Docs & Learning" index; a possible 3rd diagram on a few of the earlier deep stages; otherwise the notebook is done. Next real work is the *learning cadence* in §8 (teach → user builds → review), not more note-writing.
 
-Current git HEAD when this was written: `ecd1318` (both branches). Reminder: the light-theme PDF is regenerated via headless Chrome + a print wrapper that forces `print-color-adjust:exact` (so diagrams/callout tints print) and overrides the gradient-clipped `h1.title` to solid dark text; that wrapper makes the PDF ~20 MB.
+Current git HEAD when this was written: `0049706`+ (both branches; rebrand NATARAJA→COSMOS + 🔱→🌌 across all docs/PDFs, GitHub repo renamed to `cosmos-llm-orchestration-platform`, local remote updated). Reminder: the light-theme PDF is regenerated via headless Chrome + a print wrapper that forces `print-color-adjust:exact` (so diagrams/callout tints print) and overrides the gradient-clipped `h1.title` to solid dark text; that wrapper makes the PDF ~20 MB.
 
 ## 6. HOW to continue the deepening (exact procedure)
 `docs/notes.html` is the source of truth (self-contained, no external deps). Each stage is a block that
