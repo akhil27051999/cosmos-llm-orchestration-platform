@@ -15,7 +15,7 @@ available.** The goal is **maximal, coherent complexity: build the flagship and 
 2-month sprint. (Earlier docs reference an 8-week plan; that is now superseded by the master program.)
 
 ## What this project is
-Originally a 5-endpoint Student CRUD (Flask + Postgres). I am scaling it into **"Nataraja"** — an
+Originally a 5-endpoint Student CRUD (Flask + Postgres). I am scaling it into **"Cosmos"** — an
 async **job-orchestration platform / LLM gateway**: clients submit jobs, a gateway accepts them
 instantly (202 + id), routes to a healthy provider under rate limits, workers process with
 retry/fallback, every state change is persisted (event sourcing), with multi-tenant quotas and
@@ -62,7 +62,7 @@ predate this rule exist in SCALING-ROADMAP.md — treat them as targets, not thi
 5. When I ask, run a timed mock (HLD whiteboard / LLD design / re-implement a component) and grade me.
 
 ## Machine / local-build constraints
-This Mac: 10 cores, 16 GB RAM, ~78 GB free. ~90% of Nataraja builds & runs locally for free
+This Mac: 10 cores, 16 GB RAM, ~78 GB free. ~90% of Cosmos builds & runs locally for free
 (Docker Compose for app+Postgres+Redis; minikube/Helm/Argo for k8s; LocalStack to fake AWS;
 Prometheus/Grafana/Loki/OTel for observability). Run in **tiers** — Compose for daily dev, k8s only
 when practicing it, full observability only for Week 7 then tear down (16 GB is the limit). Prefer

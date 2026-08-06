@@ -1,4 +1,4 @@
-# Nataraja — Per-Stage Design Specs
+# Cosmos — Per-Stage Design Specs
 
 > **What this is.** A build-ready design spec for each stage — so when you sit to code, you already know
 > *what* to build. Each spec gives the **goal**, the **data model** (fields in prose/tables, not DDL), the

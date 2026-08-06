@@ -1,4 +1,4 @@
-# Nataraja — Architecture Study Guide
+# Cosmos — Architecture Study Guide
 
 > **Purpose.** Sit down, read this top-to-bottom, and you will understand the *complete* platform —
 > what every piece is, why it exists, how it fits, and the trade-offs behind each choice. It's split
@@ -18,7 +18,7 @@
 
 ## Segment 0 — The big picture & the request lifecycle
 
-**What it is.** Nataraja is an asynchronous **job-orchestration platform / LLM gateway**. Clients submit
+**What it is.** Cosmos is an asynchronous **job-orchestration platform / LLM gateway**. Clients submit
 "jobs" (e.g., "run this agent task"); the platform accepts them instantly, runs them reliably on a
 worker fleet against LLM providers, and stores every result — multi-tenant, resilient, observable.
 

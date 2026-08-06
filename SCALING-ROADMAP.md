@@ -17,7 +17,7 @@
 ### The imbalance to fix
 Your infra is ahead of your application. In a product-company loop that reads as *"deploys systems but can't design them."* The fix is to grow the **application domain** until it demands the patterns the rounds test — then your platform layer becomes the operations story on top.
 
-### The target system — **"Nataraja"**
+### The target system — **"Cosmos"**
 An async **job orchestration platform** that doubles as an **LLM gateway**. Clients submit *jobs* (an LLM completion, a bulk import, a report — anything that can't finish in one request cycle). The platform:
 
 1. Accepts the job at an **API gateway** → returns `202 + job_id` immediately (async).

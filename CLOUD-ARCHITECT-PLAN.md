@@ -25,7 +25,7 @@ Keep this table visible. Every week you should be able to point at what you prod
 
 ## 1. The system, at architecture level (no code)
 
-**"Nataraja" — an async job-orchestration platform / LLM gateway.** Clients submit *jobs* (an LLM completion, a bulk import, a report — any work too slow for one request cycle). The platform accepts the job instantly, routes it to a healthy provider under rate-limit constraints, processes it on a worker fleet with retries and fallback, tracks every state change durably, and exposes status, results, quotas, and metrics.
+**"Cosmos" — an async job-orchestration platform / LLM gateway.** Clients submit *jobs* (an LLM completion, a bulk import, a report — any work too slow for one request cycle). The platform accepts the job instantly, routes it to a healthy provider under rate-limit constraints, processes it on a worker fleet with retries and fallback, tracks every state change durably, and exposes status, results, quotas, and metrics.
 
 ### Components & planes (what you'll design)
 - **API Gateway (data plane):** validation, authn/z, idempotency, enqueue, return "accepted + id". Hosts the rate limiter.
@@ -45,7 +45,7 @@ Keep this table visible. Every week you should be able to point at what you prod
 - **Rate-limit & breaker state:** hot, atomic, shared across workers (in the in-memory store, not per-process).
 
 ### Cloud-service mapping (the CSA exercise — know the equivalents and when to pick each)
-| Role in Nataraja | AWS | Azure | GCP | When you'd pick it |
+| Role in Cosmos | AWS | Azure | GCP | When you'd pick it |
 |---|---|---|---|---|
 | Async queue | SQS / MSK (Kafka) | Service Bus / Event Hubs | Pub/Sub / Managed Kafka | SQS/Pub-Sub when you want zero-ops + don't need partition-ordering or replay; Kafka when you need ordered partitions, replay, high throughput |
 | Hot counters / cache | ElastiCache (Redis) | Azure Cache for Redis | Memorystore | Atomic counters, leaderboards, ephemeral state |
@@ -178,7 +178,7 @@ Fifteen domains. This is the "deep subjects" coverage. You won't master all of i
 - **Subjects:** L (FinOps — pricing models, right-sizing, egress, tagging, unit economics), F (sustainability pillar), O (C4 diagrams, ADRs, design docs, stakeholder communication).
 - **Refer:**
   - *Cloud FinOps* (O'Reilly — Storment & Fuller) — pricing models, allocation, the FinOps lifecycle.
-  - Your cloud's **pricing calculator** — model Nataraja for real.
+  - Your cloud's **pricing calculator** — model Cosmos for real.
   - The **C4 model** (c4model.com, free) — for clean, leveled diagrams.
   - ADR format — Michael Nygard's original "Documenting Architecture Decisions" + the `adr` GitHub templates.
   - Well-Architected **Cost Optimization** + **Sustainability** pillars.
@@ -288,7 +288,7 @@ That set — a real system *plus* the architect's paper trail explaining and jus
 
 ## 8. Local vs Cloud build matrix (per phase)
 
-**The headline:** ~90% of Nataraja builds and runs on this laptop (10 cores / 16 GB / ~78 GB free) for free. The cloud-only pieces are *designed and modeled* locally, then ideally *touched once* on a real cloud in Week 7. "Simulated locally" means you learn the **pattern** faithfully but not the managed service's real SLA/behavior.
+**The headline:** ~90% of Cosmos builds and runs on this laptop (10 cores / 16 GB / ~78 GB free) for free. The cloud-only pieces are *designed and modeled* locally, then ideally *touched once* on a real cloud in Week 7. "Simulated locally" means you learn the **pattern** faithfully but not the managed service's real SLA/behavior.
 
 | Phase | Runs 100% local (free) | Simulated locally (concept only) | What a real cloud adds |
 |---|---|---|---|
@@ -301,7 +301,7 @@ That set — a real system *plus* the architect's paper trail explaining and jus
 | **6 — Platform / observability / DR** | **minikube** + **Helm** + Argo CD; Prometheus/Grafana/Loki/Tempo/OTel; HPA on a custom (queue-depth) metric; graceful drain | Multi-AZ / multi-region & static stability (multiple kind clusters — clunky) | True zone-loss failover, managed control plane, autoscaling under real load, p99 at scale |
 | **Wk 8 — Cost / Well-Architected** | Cost **model** via the pricing calculator; WAF self-review; ADRs; diagrams | — | A real bill (which you *want* to avoid — modeling is free) |
 
-**The one paid touch worth it:** in Week 7, deploy Nataraja *once* to real **EKS/ECS + RDS + SQS inside a VPC with IAM** (AWS free tier + ~$20–50 credits). It turns "I designed it" into "I designed it locally and deployed it on AWS," makes VPC/IAM/managed-service tradeoffs concrete, and directly reinforces SAA-C03. Tear it down after.
+**The one paid touch worth it:** in Week 7, deploy Cosmos *once* to real **EKS/ECS + RDS + SQS inside a VPC with IAM** (AWS free tier + ~$20–50 credits). It turns "I designed it" into "I designed it locally and deployed it on AWS," makes VPC/IAM/managed-service tradeoffs concrete, and directly reinforces SAA-C03. Tear it down after.
 
 ---
 

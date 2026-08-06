@@ -1,4 +1,4 @@
-# LEARNING-PLAN.md — Nataraja, the depth-first week-by-week schedule
+# LEARNING-PLAN.md — Cosmos, the depth-first week-by-week schedule
 
 > **What this is.** The calendar. `MASTER-BUILD-PROGRAM.md` says *what* to build (12 stages);
 > `DEVOPS-CALIBRATION.md` says *how hard each piece is for me* and where to go deep; **this doc turns
@@ -7,7 +7,7 @@
 > **Calibrated for:** a senior DevOps/SRE engineer (~5 yrs) targeting **Cloud Solution Architect**,
 > learning **depth-first** at **~8–10 hrs/week**. Total: **~56 weeks (~13 months)**, deliberately unrushed.
 >
-> **Project title:** **Nataraja — Cloud-Native LLM Orchestration Platform.**
+> **Project title:** **Cosmos — Cloud-Native LLM Orchestration Platform.**
 
 ---
 

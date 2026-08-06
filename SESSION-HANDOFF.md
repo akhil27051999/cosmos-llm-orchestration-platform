@@ -1,14 +1,14 @@
-# SESSION HANDOFF — Nataraja (read this first next session)
+# SESSION HANDOFF — Cosmos (read this first next session)
 
 > **Purpose.** Continue the work without losing context. This file is the source of truth for *where we
 > are and how to continue*. Pair it with `CLAUDE.md` (rules/persona) and `LEARNING-PLAN.md` (the plan).
 
 ## 1. Project identity
-- **Name:** **Nataraja — Cloud-Native LLM Orchestration Platform** (was "Flask-REST-API", briefly "Helios").
-- **GitHub repo:** `akhil27051999/nataraja-llm-orchestration-platform` (renamed; GitHub redirects old URLs).
+- **Name:** **Cosmos — Cloud-Native LLM Orchestration Platform** (was "Flask-REST-API", briefly "Helios").
+- **GitHub repo:** `akhil27051999/cosmos-llm-orchestration-platform` (renamed; GitHub redirects old URLs).
 - **Local folder (unchanged by the rename):** `~/Desktop/Flask-REST-API` ← this is the working dir.
 - **Branches:** `main` and `dev` — kept **identical** and pushed together every commit.
-- **Theme:** Nataraja / Shiva — ring-of-fire + cosmic-violet, flame/ember accents, 🔱. Favicons: notes 📓, roadmap 🔱, architecture 🔱, study-guide 📘.
+- **Theme:** Cosmos / Shiva — ring-of-fire + cosmic-violet, flame/ember accents, 🌌. Favicons: notes 📓, roadmap 🌌, architecture 🌌, study-guide 📘.
 
 ## 2. THE HARD RULE (never break)
 The user **writes 100% of the implementation code themselves.** My role: teach concepts, design in prose
@@ -20,10 +20,10 @@ The user **writes 100% of the implementation code themselves.** My role: teach c
 `ARCHITECTURE-STUDY-GUIDE.md` (16 segments), `STAGE-DESIGN-SPECS.md` (per-stage build blueprint).
 
 **Deliverables (`docs/`):**
-- `notes.html` + `Nataraja-Notes.pdf` — **the Learning Notes (main artifact, 97 lessons).**
-- `architecture.html` (interactive Flow + 3-D slab views, logos) + `Nataraja-Architecture.pdf` (light).
-- `roadmap.html` + `Nataraja-Roadmap.pdf`.
-- `study-guide.html` + `Nataraja-Architecture-Study-Guide.pdf`.
+- `notes.html` + `Cosmos-Notes.pdf` — **the Learning Notes (main artifact, 97 lessons).**
+- `architecture.html` (interactive Flow + 3-D slab views, logos) + `Cosmos-Architecture.pdf` (light).
+- `roadmap.html` + `Cosmos-Roadmap.pdf`.
+- `study-guide.html` + `Cosmos-Architecture-Study-Guide.pdf`.
 - Original DevOps `.md` docs (git.md, aws.md, cicd.md, …) — untouched.
 
 ## 4. Published artifacts (update in place — same URLs)
@@ -67,7 +67,7 @@ begins with `<div class="stage-banner" id="sN">…</div>` followed by its `<sect
      scratchpad `build_s*_deep.py` — scratchpad is EPHEMERAL and is now gone; just recreate them, they're ~30 lines.)
 3. Regenerate the PDF (light theme) — Chrome headless, print wrapper that sets `data-theme="light"`,
    hides `.nav`, forces white bg, page-breaks per lesson/stage-banner. Command shape:
-   `"…/Google Chrome" --headless=new --print-to-pdf=Nataraja-Notes.pdf --no-pdf-header-footer --virtual-time-budget=9000 file://…/print.html`
+   `"…/Google Chrome" --headless=new --print-to-pdf=Cosmos-Notes.pdf --no-pdf-header-footer --virtual-time-budget=9000 file://…/print.html`
 4. Copy both into `docs/`, `git add`, commit on `main`, `git checkout dev && git merge main --ff-only`,
    push both, then **re-publish the notes artifact** (same file path, or url + force).
 

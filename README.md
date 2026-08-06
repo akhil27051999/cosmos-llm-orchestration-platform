@@ -1,6 +1,6 @@
-# Nataraja — Cloud-Native LLM Orchestration Platform
+# Cosmos — Cloud-Native LLM Orchestration Platform
 
-> *Formerly "Flask REST API — End-to-End DevOps Project." This began as a 5-endpoint Flask + PostgreSQL CRUD and is being scaled into **Nataraja**: a distributed, event-driven LLM job-orchestration platform. See [`LEARNING-PLAN.md`](LEARNING-PLAN.md) for the build schedule and [`MASTER-BUILD-PROGRAM.md`](MASTER-BUILD-PROGRAM.md) for the full architecture.*
+> *Formerly "Flask REST API — End-to-End DevOps Project." This began as a 5-endpoint Flask + PostgreSQL CRUD and is being scaled into **Cosmos**: a distributed, event-driven LLM job-orchestration platform. See [`LEARNING-PLAN.md`](LEARNING-PLAN.md) for the build schedule and [`MASTER-BUILD-PROGRAM.md`](MASTER-BUILD-PROGRAM.md) for the full architecture.*
 
 An async **job-orchestration platform / LLM gateway**: clients submit jobs, a gateway accepts them instantly (202 + id), routes to a healthy provider under rate limits, workers process with retry/fallback, every state change is event-sourced, with multi-tenant quotas and full observability — deployed on Kubernetes/AWS. The foundation is a production-grade DevOps reference architecture covering the **full lifecycle** from local development to production-style Kubernetes orchestration with GitOps and observability.
 
