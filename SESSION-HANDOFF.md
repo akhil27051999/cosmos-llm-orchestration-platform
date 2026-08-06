@@ -39,13 +39,13 @@ The user **writes 100% of the implementation code themselves.** My role: teach c
 We are rebuilding every stage to **"Lesson-1 depth"** (multiple explained step-sections, 2 diagrams,
 analogy + insight + warning/bridge callouts, cheat-sheet, self-check).
 
-**Done DEEP:** Foundations 0.5, and Stages **0, 1, 2, 3, 4, 5, 6, 7, 8, 9**. ✅
-**STILL THIN (need deepening next):** Stages **10, 11, 12**. ⬅️ **RESUME HERE.**
-- Stage 10 — Preview Environments (5 topics)
+**Done DEEP:** Foundations 0.5, and Stages **0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10**. ✅
+**STILL THIN (need deepening next):** Stages **11, 12**. ⬅️ **RESUME HERE.**
+- ~~Stage 10 — Preview Environments (5 topics)~~ ✅ deepened (5e8d98d): 10·1 Ephemeral Envs, 10·2 vcluster vs Namespace, 10·3 external-dns & cert-manager, 10·4 Argo CD ApplicationSets, 10·5 Lifecycle & Teardown.
 - Stage 11 — Cloud, IaC & Multi-Region (6 topics)
 - Stage 12 — Observability, SRE & Capstone (10 topics)
 
-Current git HEAD when this was written: `19d29b1` (both branches).
+Current git HEAD when this was written: `5e8d98d` (both branches).
 
 ## 6. HOW to continue the deepening (exact procedure)
 `docs/notes.html` is the source of truth (self-contained, no external deps). Each stage is a block that
