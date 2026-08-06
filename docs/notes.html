@@ -151,6 +151,14 @@
     <nav class="nav" id="nav">
       <a href="#l1"><span class="done">●</span> 1 · Async &amp; Event Loop</a>
       <a href="#l2"><span class="done">●</span> 2 · Types &amp; Pydantic</a>
+      <a href="#l3"><span class="done">●</span> 3 · Generators &amp; Coroutines</a>
+      <a href="#l4"><span class="done">●</span> 4 · Context Managers</a>
+      <a href="#l5"><span class="done">●</span> 5 · Decorators</a>
+      <a href="#l6"><span class="done">●</span> 6 · Dataclasses vs Pydantic</a>
+      <a href="#l7"><span class="done">●</span> 7 · Testing</a>
+      <a href="#l8"><span class="done">●</span> 8 · Async SQLAlchemy</a>
+      <a href="#l9"><span class="done">●</span> 9 · Alembic</a>
+      <a href="#l10"><span class="done">●</span> 10 · Project Hygiene</a>
       <a class="themebtn" onclick="document.documentElement.setAttribute('data-theme', (document.documentElement.getAttribute('data-theme')==='light'?'dark':'light'))">◑ theme</a>
     </nav>
 
@@ -362,6 +370,253 @@
       </div>
     </section>
 
-    <div class="foot">🔱 Nataraja — Learning Notes · Stage 0.5 · updated as each concept is taught · next: L3 — Generators &amp; Coroutines</div>
+    <!-- ================= LESSON 3 ================= -->
+    <section class="lesson" id="l3">
+      <div class="lesson-h"><span class="lnum">L3</span><h2>Generators &amp; Coroutines</h2><span class="tag">the machinery under async</span></div>
+      <h3 class="step"><span class="n">1</span>The idea: a function that can pause</h3>
+      <p>Normal functions run start-to-finish and forget everything. A <strong>generator</strong> can <strong>pause in the middle, hand back a value, and later resume exactly where it left off</strong> — remembering all its variables.</p>
+      <div class="callout analogy"><span class="ct">🍬 Analogy — a Pez dispenser</span>A normal function dumps the whole bag of candy at once. A generator is a <strong>Pez dispenser</strong>: press once → one candy (<code>yield</code>), it pauses; press again → the next one. It produces values <strong>one at a time, on demand (lazily)</strong>, so it never has to hold the whole bag in memory.</div>
+      <figure><figcaption>yield = pause &amp; hand back a value</figcaption>
+        <div class="flow">
+          <div class="fnode">call generator → runs to first <code>yield 1</code> → <strong>pauses</strong>, returns 1</div>
+          <div class="farrow">▼ ask for next</div>
+          <div class="fnode">resumes after the yield → runs to <code>yield 2</code> → pauses, returns 2</div>
+          <div class="farrow">▼ …until it finishes</div>
+        </div>
+      </figure>
+      <h3 class="step"><span class="n">2</span>Coroutines = the same trick, for async</h3>
+      <p>An <code>async def</code> function is a <strong>coroutine</strong> — it uses the <em>exact same “pause &amp; resume” machinery</em> as a generator. The only difference: a generator pauses at <code>yield</code> to hand back <strong>data</strong>; a coroutine pauses at <code>await</code> to hand back <strong>control</strong> to the event loop (Lesson 1!).</p>
+      <div class="callout insight"><span class="ct">💡 Key insight</span>Calling <code>async def f()</code> does <strong>nothing</strong> by itself — it just creates a coroutine object sitting there, inert. It only runs when the event loop <em>awaits/schedules</em> it. (Like a recipe card: writing it doesn't cook anything; a chef has to pick it up.)</div>
+      <div class="bridge callout"><span class="ct">🔗 Ties back to L1</span>“<code>await</code> pauses my task and lets others run” works <em>because</em> coroutines are pausable functions. Now you know the gears inside the event loop.</div>
+      <div class="cheat"><span class="ct">📝 Cheat-sheet</span><ul>
+        <li>Generator = a function that pauses at <code>yield</code>, produces values lazily (one at a time).</li>
+        <li>It remembers its place &amp; variables between resumes.</li>
+        <li>Coroutine (<code>async def</code>) = same pause/resume machinery, pauses at <code>await</code>.</li>
+        <li><code>yield</code> hands back <strong>data</strong>; <code>await</code> hands back <strong>control</strong>.</li>
+        <li>Calling a coroutine returns an inert object — it runs only when awaited/scheduled.</li>
+        <li>Generators save memory (lazy); great for streaming large data.</li>
+      </ul></div>
+      <div class="selfcheck"><span class="ct">✅ Self-check</span><ol>
+        <li>What do a generator and a coroutine have in common under the hood?</li>
+        <li>You write <code>result = my_async_fn()</code> and nothing happens. Why — and what's missing?</li>
+        <li>When would a generator save you memory vs a normal function returning a list?</li>
+      </ol></div>
+    </section>
+
+    <!-- ================= LESSON 4 ================= -->
+    <section class="lesson" id="l4">
+      <div class="lesson-h"><span class="lnum">L4</span><h2>Context Managers</h2><span class="tag">borrow → use → always return</span></div>
+      <h3 class="step"><span class="n">1</span>The problem: things you must clean up</h3>
+      <p>Files, database sessions, network connections, locks — you <strong>open/acquire</strong> them, use them, and <strong>must release</strong> them. If an error happens mid-use and you forget to release, you <strong>leak</strong> resources (connections pile up, the app dies).</p>
+      <div class="callout analogy"><span class="ct">📚 Analogy — a library book</span>A context manager (<code>with</code>) is like borrowing a library book that <strong>returns itself automatically the moment you leave</strong> — even if you trip and fall on the way out (an exception). You literally cannot forget to return it.</div>
+      <figure><figcaption>the <code>with</code> block guarantees cleanup</figcaption>
+        <div class="flow">
+          <div class="fnode accent"><code>with open(f) as file:</code> &nbsp;→&nbsp; ACQUIRE (<code>__enter__</code>)</div>
+          <div class="farrow">▼</div>
+          <div class="fnode">use the resource…</div>
+          <div class="fsplit">
+            <div class="fbranch"><span class="blabel yes">SUCCESS</span><div class="farrow">▼</div><div class="fnode">RELEASE (<code>__exit__</code>)</div></div>
+            <div class="fbranch"><span class="blabel no">ERROR</span><div class="farrow">▼</div><div class="fnode">RELEASE anyway (<code>__exit__</code>)</div></div>
+          </div>
+        </div>
+      </figure>
+      <h3 class="step"><span class="n">2</span><code>async with</code> for async resources</h3>
+      <p>Async resources (a DB session, an HTTP client) use <code>async with</code> (backed by <code>__aenter__</code>/<code>__aexit__</code>). You'll use this constantly in Stage 0.5 for the SQLAlchemy session — open a session, do work, and it commits/closes safely even on error.</p>
+      <div class="callout insight"><span class="ct">💡 Two ways to make one</span>A class with <code>__enter__</code>/<code>__exit__</code>, or the easy way: decorate a generator with <code>@contextlib.contextmanager</code> — the code before <code>yield</code> is “acquire,” after is “release.” (Notice: generators show up again!)</div>
+      <div class="cheat"><span class="ct">📝 Cheat-sheet</span><ul>
+        <li><code>with</code> guarantees cleanup runs — even if an exception is thrown.</li>
+        <li>Mechanism: <code>__enter__</code> (acquire) → body → <code>__exit__</code> (release, always).</li>
+        <li><code>async with</code> = the async version (<code>__aenter__</code>/<code>__aexit__</code>) for DB sessions, connections.</li>
+        <li>Build one via a class, or <code>@contextmanager</code> on a generator.</li>
+        <li>Use for: files, DB sessions, locks, connections — anything you must release.</li>
+      </ul></div>
+      <div class="selfcheck"><span class="ct">✅ Self-check</span><ol>
+        <li>Why is <code>with open(...)</code> safer than opening a file and calling <code>.close()</code> yourself?</li>
+        <li>What runs in <code>__exit__</code>, and when is it guaranteed to run?</li>
+        <li>Why would a DB session use <code>async with</code> instead of plain <code>with</code>?</li>
+      </ol></div>
+    </section>
+
+    <!-- ================= LESSON 5 ================= -->
+    <section class="lesson" id="l5">
+      <div class="lesson-h"><span class="lnum">L5</span><h2>Decorators</h2><span class="tag">wrap a function to add behavior</span></div>
+      <h3 class="step"><span class="n">1</span>The idea: gift-wrapping a function</h3>
+      <p>In Python, functions are just objects you can pass around. A <strong>decorator</strong> takes a function, <strong>wraps it in an extra layer</strong> that runs code before/after, and returns the wrapped version — <em>without changing the original function's code</em>.</p>
+      <div class="callout analogy"><span class="ct">🎁 Analogy — gift wrapping</span>The gift inside is unchanged; you add a layer around it. Decorators add <strong>cross-cutting behavior</strong> — logging, timing, auth checks, retries, caching — the same way, to many functions, without copy-pasting that logic into each.</div>
+      <figure><figcaption>a decorator wraps the call</figcaption>
+        <div class="flow">
+          <div class="fnode">call arrives</div>
+          <div class="farrow">▼</div>
+          <div class="fnode accent">DECORATOR — “before” (e.g. start timer, check auth)</div>
+          <div class="farrow">▼</div>
+          <div class="fnode">the original function runs</div>
+          <div class="farrow">▼</div>
+          <div class="fnode accent">DECORATOR — “after” (e.g. log duration)</div>
+        </div>
+      </figure>
+      <h3 class="step"><span class="n">2</span>You'll see these everywhere</h3>
+      <p><code>@app.get("/jobs")</code> (FastAPI routes), <code>@pytest.fixture</code> (tests), <code>@property</code>, <code>@lru_cache</code> — all decorators. Tip: use <code>functools.wraps</code> inside your decorator so the wrapped function keeps its real name and docs (otherwise debugging gets confusing).</p>
+      <div class="bridge callout"><span class="ct">🛠️ Your DevOps bridge</span>A decorator is basically <strong>middleware</strong> for a single function — the same “run something before/after” idea as nginx/Envoy filters or HTTP middleware, at function scope.</div>
+      <div class="cheat"><span class="ct">📝 Cheat-sheet</span><ul>
+        <li>Functions are objects → you can wrap them.</li>
+        <li>A decorator takes a function, returns a wrapped one that adds before/after behavior.</li>
+        <li><code>@name</code> above a function applies the decorator.</li>
+        <li>Great for cross-cutting concerns: logging, timing, auth, retry, caching.</li>
+        <li>Use <code>functools.wraps</code> to preserve the original name/docs.</li>
+        <li>FastAPI &amp; pytest are built on decorators.</li>
+      </ul></div>
+      <div class="selfcheck"><span class="ct">✅ Self-check</span><ol>
+        <li>In one sentence, what does a decorator do to a function?</li>
+        <li>Name two cross-cutting concerns that are perfect for a decorator, and why.</li>
+        <li>Why bother with <code>functools.wraps</code>?</li>
+      </ol></div>
+    </section>
+
+    <!-- ================= LESSON 6 ================= -->
+    <section class="lesson" id="l6">
+      <div class="lesson-h"><span class="lnum">L6</span><h2>Dataclasses vs Pydantic</h2><span class="tag">two kinds of “data box”</span></div>
+      <h3 class="step"><span class="n">1</span>Two containers for structured data</h3>
+      <p>Both hold structured data with named, typed fields. The difference is <strong>whether they validate</strong>:</p>
+      <figure><figcaption>trusted core vs untrusted edge (ties to L2)</figcaption>
+        <div class="lanes">
+          <div class="lane" style="border-color:var(--work)"><div class="lh" style="color:var(--work)">@dataclass — plain box</div><div class="lb">Auto-generates <code>__init__</code>/<code>__repr__</code>/<code>__eq__</code>. <strong>No validation.</strong> Use for <strong>trusted, internal</strong> data you already checked. Fast, zero-dependency. <code>frozen=True</code> makes it immutable.</div></div>
+          <div class="lane" style="border-color:var(--violet)"><div class="lh" style="color:var(--violet)">Pydantic model — box + inspector</div><div class="lb">Same fields, but <strong>validates &amp; coerces at construction</strong>, and serializes to/from JSON. Use at the <strong>boundary</strong> (API input, config, external data).</div></div>
+        </div>
+      </figure>
+      <div class="callout analogy"><span class="ct">📦 Analogy</span>A <strong>dataclass</strong> is a labeled box you pack yourself (you trust the contents). A <strong>Pydantic model</strong> is a box with a customs inspector who checks everything going in. Don't pay for the inspector on internal boxes you already trust.</div>
+      <div class="callout insight"><span class="ct">💡 Rule of thumb</span>Untrusted input crosses a boundary → <strong>Pydantic</strong>. Internal, already-validated domain object → <strong>dataclass</strong>. (This is the “validate at the edges, trust the core” pattern from L2, made concrete.)</div>
+      <div class="cheat"><span class="ct">📝 Cheat-sheet</span><ul>
+        <li>Both = typed, named-field containers.</li>
+        <li><code>@dataclass</code>: no validation, fast, for trusted internal data; <code>frozen=True</code> = immutable.</li>
+        <li>Pydantic: validates + coerces + (de)serializes; for untrusted boundary data.</li>
+        <li>Pick by <em>where the data comes from</em>: edge → Pydantic, core → dataclass.</li>
+      </ul></div>
+      <div class="selfcheck"><span class="ct">✅ Self-check</span><ol>
+        <li>Your worker passes an already-validated job object between two internal functions. Dataclass or Pydantic?</li>
+        <li>Why not just use Pydantic for everything?</li>
+        <li>What does <code>frozen=True</code> buy you?</li>
+      </ol></div>
+    </section>
+
+    <!-- ================= LESSON 7 ================= -->
+    <section class="lesson" id="l7">
+      <div class="lesson-h"><span class="lnum">L7</span><h2>Testing — pytest &amp; Hypothesis</h2><span class="tag">your safety net</span></div>
+      <h3 class="step"><span class="n">1</span>Why tests (the real reason)</h3>
+      <p>Tests aren't about proving code works today — they're a <strong>safety net</strong> that lets you change code tomorrow <em>without fear</em>. For a long-lived platform, that confidence is everything.</p>
+      <div class="callout analogy"><span class="ct">🧯 Analogy</span>Tests are <strong>smoke alarms</strong> throughout the house. You don't notice them daily, but the moment you break something, one goes off — right next to the problem, not after the house burns down in production.</div>
+      <h3 class="step"><span class="n">2</span>The pytest toolkit</h3>
+      <figure><figcaption>the four tools you'll use constantly</figcaption>
+        <div class="lanes">
+          <div class="lane"><div class="lh">fixtures</div><div class="lb">Reusable <strong>setup/teardown</strong> run before/after tests (a DB, a client, sample data). The “prep kitchen” that lays out ingredients so each test starts clean.</div></div>
+          <div class="lane"><div class="lh">parametrize</div><div class="lb">Run the <strong>same test with many inputs</strong> automatically — one test, a table of cases (a spice rack of inputs).</div></div>
+          <div class="lane"><div class="lh">mocking</div><div class="lb">Replace slow/external things (DB, Claude API) with a <strong>stunt double</strong> so tests are fast, deterministic, and free.</div></div>
+          <div class="lane"><div class="lh">async tests</div><div class="lb"><code>pytest-asyncio</code> lets you <code>await</code> inside tests — needed to test your async code.</div></div>
+        </div>
+      </figure>
+      <h3 class="step"><span class="n">3</span>Hypothesis — the robot that breaks your code</h3>
+      <p>Normal tests check examples <em>you</em> think of. <strong>Property-based testing</strong> (Hypothesis) flips it: you state a <strong>property that must always hold</strong> (“encoding then decoding returns the original”), and Hypothesis throws <strong>hundreds of weird inputs</strong> at it to find a counterexample — then shrinks it to the smallest failing case.</p>
+      <div class="callout insight"><span class="ct">💡 Why it's powerful</span>It finds the edge cases you'd never think to write — empty strings, huge numbers, unicode, zero. Great for parsers, encoders, and pure logic.</div>
+      <div class="cheat"><span class="ct">📝 Cheat-sheet</span><ul>
+        <li>Tests = a safety net for fearless change, not busywork.</li>
+        <li><strong>fixtures</strong> = setup/teardown &amp; dependency injection for tests.</li>
+        <li><strong>parametrize</strong> = same test, many inputs.</li>
+        <li><strong>mocking</strong> = fake the slow/external stuff (DB, APIs).</li>
+        <li><code>pytest-asyncio</code> = test async code.</li>
+        <li><strong>Hypothesis</strong> = state a property; it hunts counterexamples.</li>
+        <li>Test pyramid: many fast unit tests, fewer integration, fewest end-to-end.</li>
+      </ul></div>
+      <div class="selfcheck"><span class="ct">✅ Self-check</span><ol>
+        <li>What's the real value of a test suite for a system you'll change for months?</li>
+        <li>When you test a function that calls the Claude API, what do you do to that call, and why?</li>
+        <li>Give one property (not an example) you could hand to Hypothesis for a “parse job id” function.</li>
+      </ol></div>
+    </section>
+
+    <!-- ================= LESSON 8 ================= -->
+    <section class="lesson" id="l8">
+      <div class="lesson-h"><span class="lnum">L8</span><h2>Async SQLAlchemy 2.0</h2><span class="tag">talking to Postgres without blocking</span></div>
+      <h3 class="step"><span class="n">1</span>The three pieces</h3>
+      <figure><figcaption>engine · session · ORM</figcaption>
+        <div class="lanes">
+          <div class="lane"><div class="lh">Engine</div><div class="lb">The <strong>phone line</strong> to the database — a <strong>connection pool</strong> it reuses (opening a new DB connection per request is expensive).</div></div>
+          <div class="lane"><div class="lh">Session (unit of work)</div><div class="lb">Your <strong>shopping cart</strong>: add/change/delete objects, then <code>commit()</code> applies them all in one <strong>transaction</strong> (or <code>rollback()</code> undoes everything).</div></div>
+          <div class="lane"><div class="lh">ORM</div><div class="lb">A <strong>translator</strong> between Python objects and SQL rows — you work with a <code>Job</code> object, it writes the SQL.</div></div>
+        </div>
+      </figure>
+      <div class="callout analogy"><span class="ct">🛒 Analogy</span>The session is a shopping cart: you toss items in as you shop, and <strong>nothing is actually bought until checkout</strong> (<code>commit</code>). If you change your mind, empty the cart (<code>rollback</code>) — the store shelves (DB) are untouched.</div>
+      <h3 class="step"><span class="n">2</span>Why <em>async</em> here matters</h3>
+      <p>Use the <strong>async driver</strong> (<code>asyncpg</code>) with <code>AsyncSession</code> and <code>async with</code>. Reason: a DB query is I/O — with a <em>sync</em> driver it would <strong>block the event loop</strong> (Lesson 1's cardinal sin!) and freeze every other request. The async driver lets the loop serve others while the DB works.</p>
+      <div class="bridge callout"><span class="ct">🔗 Ties to Stage 0</span>You'll hide the session behind a <strong>repository</strong> (e.g., <code>JobRepository.get(id)</code>) so your business logic never touches SQL directly — that's the “ports &amp; adapters” idea you'll formalize in Stage 0.</div>
+      <div class="callout warn"><span class="ct">⚠️ Watch out</span>The <strong>N+1 query problem</strong>: looping over 100 jobs and lazily loading each one's rows = 101 queries. Load them together (eager loading) instead. Classic performance trap.</div>
+      <div class="cheat"><span class="ct">📝 Cheat-sheet</span><ul>
+        <li>Engine = connection pool (reused DB connections).</li>
+        <li>Session = unit of work / shopping cart; <code>commit</code> = checkout, <code>rollback</code> = undo.</li>
+        <li>ORM = maps Python objects ↔ SQL rows.</li>
+        <li>Use the <strong>async driver</strong> (<code>asyncpg</code>) + <code>async with</code> so DB calls don't block the loop.</li>
+        <li>Hide it behind a <strong>repository</strong> (keeps SQL out of business logic).</li>
+        <li>Beware the <strong>N+1</strong> query trap — load related rows together.</li>
+      </ul></div>
+      <div class="selfcheck"><span class="ct">✅ Self-check</span><ol>
+        <li>Why must a DB call in an async app use an async driver? (tie it to Lesson 1)</li>
+        <li>What does <code>commit()</code> vs <code>rollback()</code> do, in the shopping-cart analogy?</li>
+        <li>What is the N+1 problem, and how do you avoid it?</li>
+      </ol></div>
+    </section>
+
+    <!-- ================= LESSON 9 ================= -->
+    <section class="lesson" id="l9">
+      <div class="lesson-h"><span class="lnum">L9</span><h2>Alembic Migrations</h2><span class="tag">version control for your database</span></div>
+      <h3 class="step"><span class="n">1</span>The problem: the schema must change over time</h3>
+      <p>You'll add columns, tables, indexes as the app grows. But the database already has <strong>real data</strong> — you can't just drop and recreate it. You need <strong>ordered, repeatable, reversible</strong> changes that every environment (your laptop, staging, prod) applies identically.</p>
+      <div class="callout analogy"><span class="ct">🗂️ Analogy — git for your schema</span>Alembic is <strong>version control for the database structure</strong>. Each migration is like a commit: a numbered step with an <code>upgrade()</code> (go forward) and <code>downgrade()</code> (roll back). The chain of migrations = the schema's history.</div>
+      <figure><figcaption>a chain of ordered, reversible steps</figcaption>
+        <div class="flow">
+          <div class="fnode">v1 · create <code>jobs</code> table</div>
+          <div class="farrow">▼ upgrade &nbsp;/&nbsp; ▲ downgrade</div>
+          <div class="fnode">v2 · add <code>priority</code> column</div>
+          <div class="farrow">▼ / ▲</div>
+          <div class="fnode">v3 · add index on <code>status</code></div>
+        </div>
+      </figure>
+      <h3 class="step"><span class="n">2</span>Autogenerate — with a warning</h3>
+      <p>Alembic can <strong>compare your ORM models to the actual DB</strong> and auto-write a candidate migration. Huge time-saver — but <strong>always read what it generated</strong> before applying (it can miss renames or generate destructive steps). Golden rule: <strong>never edit a migration that has already shipped</strong> — add a new one.</p>
+      <div class="cheat"><span class="ct">📝 Cheat-sheet</span><ul>
+        <li>Migration = a versioned, ordered, reversible schema change (like a git commit).</li>
+        <li><code>upgrade()</code> = apply; <code>downgrade()</code> = revert.</li>
+        <li>Autogenerate diffs models vs DB → candidate migration (always review it!).</li>
+        <li>Run migrations in deploy/CI so every environment matches.</li>
+        <li>Never edit an already-shipped migration — write a new one.</li>
+      </ul></div>
+      <div class="selfcheck"><span class="ct">✅ Self-check</span><ol>
+        <li>Why can't you just recreate the database when the schema changes?</li>
+        <li>What are <code>upgrade()</code> and <code>downgrade()</code> for?</li>
+        <li>Why must you review an auto-generated migration before running it?</li>
+      </ol></div>
+    </section>
+
+    <!-- ================= LESSON 10 ================= -->
+    <section class="lesson" id="l10">
+      <div class="lesson-h"><span class="lnum">L10</span><h2>Project Hygiene — uv, venv, pyproject</h2><span class="tag">reproducible, isolated projects</span></div>
+      <h3 class="step"><span class="n">1</span>Virtual environments — isolation</h3>
+      <p>A <strong>virtual environment</strong> is a private, isolated set of installed packages <em>per project</em>, so Project A's libraries never clash with Project B's (or your system Python).</p>
+      <div class="callout analogy"><span class="ct">🧰 Analogy</span>A venv is a <strong>clean, dedicated workshop</strong> for one project — its own tools on the bench. You don't share one messy garage across every project and hope nothing conflicts.</div>
+      <h3 class="step"><span class="n">2</span>uv, lockfiles &amp; pyproject.toml</h3>
+      <p><strong>uv</strong> is a fast, modern tool that creates the venv, installs dependencies, and (crucially) writes a <strong>lockfile</strong> — the exact pinned versions of every package. That makes installs <strong>reproducible</strong>: your machine, a teammate's, and CI all build the <em>identical</em> environment. <code>pyproject.toml</code> is the project's spec sheet (name, deps, dev-deps, tooling config).</p>
+      <div class="callout insight"><span class="ct">💡 Why the lockfile matters</span>“Works on my machine” bugs usually mean different package versions. A lockfile makes the environment <strong>exact and repeatable everywhere</strong> — the same reproducibility instinct you already have from Docker images and Terraform.</div>
+      <div class="cheat"><span class="ct">📝 Cheat-sheet</span><ul>
+        <li>venv = isolated packages per project (no cross-project clashes).</li>
+        <li><code>uv</code> = fast tool for venv + install + lockfile (modern pip/venv replacement).</li>
+        <li>Lockfile = exact pinned versions → reproducible installs everywhere.</li>
+        <li><code>pyproject.toml</code> = project metadata, dependencies, tool config.</li>
+        <li>Separate runtime deps from dev deps (pytest, mypy).</li>
+      </ul></div>
+      <div class="selfcheck"><span class="ct">✅ Self-check</span><ol>
+        <li>What problem does a virtual environment solve?</li>
+        <li>What does a lockfile guarantee that a loose dependency list doesn't?</li>
+        <li>Which of your DevOps habits does this map onto?</li>
+      </ol></div>
+    </section>
+
+    <div class="foot">🔱 Nataraja — Learning Notes · Stage 0.5 complete (Lessons 1–10) · Python &amp; Async Foundations · next stage: Stage 0 — FastAPI &amp; clean architecture</div>
   </div>
 </div>
