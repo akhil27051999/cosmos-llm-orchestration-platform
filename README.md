@@ -1,4 +1,4 @@
-# Cosmos — End-to-End DevOps Platform (Flask + PostgreSQL REST API)
+# End-to-End DevOps Platform (Flask + PostgreSQL REST API)
 
 Production-grade DevOps reference architecture built around a Flask + PostgreSQL REST API. Covers the **full lifecycle** from local development to production-style Kubernetes orchestration with GitOps and observability.
 
