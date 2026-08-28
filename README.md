@@ -1,4 +1,4 @@
-# Flask REST API — End-to-End DevOps Project
+# Cosmos — End-to-End DevOps Platform (Flask + PostgreSQL REST API)
 
 Production-grade DevOps reference architecture built around a Flask + PostgreSQL REST API. Covers the **full lifecycle** from local development to production-style Kubernetes orchestration with GitOps and observability.
 
@@ -201,8 +201,8 @@ Each layer depends on the previous. The CI pipeline (3) makes sense because we c
 
 ### 1. Local app
 ```bash
-git clone https://github.com/akhil27051999/Flask-REST-API.git
-cd Flask-REST-API
+git clone https://github.com/akhil27051999/cosmos-llm-orchestration-platform.git
+cd cosmos-llm-orchestration-platform
 python3 -m venv venv && source venv/bin/activate
 pip install -r app/requirements.txt
 # Configure .env (see Module 1) and run:
@@ -254,7 +254,7 @@ kubectl patch application flask-api -n argocd --type merge \
 ## Repository Layout
 
 ```
-Flask-REST-API/
+cosmos-llm-orchestration-platform/
 ├── app/                    # Flask source code + Dockerfile + requirements.txt + migrations
 ├── tests/                  # pytest unit tests + Locust load tests
 ├── nginx/                  # nginx reverse proxy config + Dockerfile
