@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-app = FastAPI()
+app = FastAPI(title="cosmos", description="API for the cosmos project", version="0.1.0")
 
 @app.get("/health")
 def health_check():
