@@ -4,4 +4,4 @@ app = FastAPI(title="cosmos", description="API for the cosmos project", version=
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok"}
+    return {"status": "okk"}
