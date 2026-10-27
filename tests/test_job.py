@@ -16,7 +16,7 @@ def test_new_job_starts_pending():
 def test_allowed_moves(start, target):
     job = Job(status=start)           
     job.transition_to(target)
-    assert job.status == target
+    assert job.status == target    
 
 @pytest.mark.parametrize("start, target", [
     (JobStatus.PENDING, JobStatus.SUCCEEDED),
@@ -38,3 +38,14 @@ def test_rejected_move_leaves_status_unchanged():
     with pytest.raises(InvalidTransition):
         job.transition_to(JobStatus.CANCELLED)
     assert job.status == JobStatus.SUCCEEDED
+
+@pytest.mark.parametrize("status, expected", [
+    (JobStatus.PENDING, False),
+    (JobStatus.RUNNING, False),
+    (JobStatus.SUCCEEDED, True),
+    (JobStatus.FAILED, True),
+    (JobStatus.CANCELLED, True),
+])
+def test_is_terminal(status, expected):
+    job = Job(status=status)
+    assert job.is_terminal == expected
