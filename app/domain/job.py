@@ -30,8 +30,13 @@ ALLOWED_TRANSITIONS = {
 class Job:
     status: JobStatus = JobStatus.PENDING
 
+    @property
+    def is_terminal(self) -> bool:
+        return not ALLOWED_TRANSITIONS[self.status]
+
     def transition_to(self, target: JobStatus) -> None:
         allowed = ALLOWED_TRANSITIONS[self.status]
         if target not in allowed:
             raise InvalidTransition(self.status, target)
         self.status = target
+
