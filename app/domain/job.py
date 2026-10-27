@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from enum import Enum
 
 
@@ -28,6 +29,7 @@ ALLOWED_TRANSITIONS = {
 
 @dataclass
 class Job:
+    id: uuid.UUID = field(default_factory=uuid.uuid4)
     status: JobStatus = JobStatus.PENDING
 
     @property
