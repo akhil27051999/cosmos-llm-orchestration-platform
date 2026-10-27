@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from app.domain.job import Job, JobStatus, InvalidTransition
@@ -5,6 +7,15 @@ from app.domain.job import Job, JobStatus, InvalidTransition
 def test_new_job_starts_pending():
     job = Job()
     assert job.status == JobStatus.PENDING
+
+def test_new_job_has_an_id():
+    job = Job()
+    assert isinstance(job.id, uuid.UUID)
+
+def test_each_job_gets_a_unique_id():
+    first = Job()
+    second = Job()
+    assert first.id != second.id
 
 @pytest.mark.parametrize("start, target", [
     (JobStatus.PENDING, JobStatus.RUNNING),
@@ -49,3 +60,4 @@ def test_rejected_move_leaves_status_unchanged():
 def test_is_terminal(status, expected):
     job = Job(status=status)
     assert job.is_terminal == expected
+
