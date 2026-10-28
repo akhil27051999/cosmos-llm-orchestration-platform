@@ -4,7 +4,7 @@
 
 An asynchronous job-orchestration platform for LLM workloads, built from scratch, one stage at a time, as a hands-on learning project.
 
-> **Current state:** scaffold with CI. The API serves a health check; the Job state machine is the next milestone.
+> **Current state:** domain layer built and tested — a `Job` state machine and a repository with an in-memory adapter. Next: the job service (M3), then the HTTP API (M4).
 
 ## Why I'm building this
 
@@ -14,8 +14,9 @@ I've spent five years as a DevOps/SRE engineer running other people's distribute
 
 - [x] **M0** — FastAPI app, `/health` endpoint, pytest setup
 - [x] **M0.5** — CI on every PR, pinned dependencies, protected `main`
-- [ ] **M1** — Job entity and state machine (pure Python)
-- [ ] **M2–M3** — Repository interface, in-memory store, job service
+- [x] **M1** — Job entity and state machine (pure Python)
+- [x] **M2** — Job ids, repository port, in-memory adapter
+- [ ] **M3** — Job service (submit, get, cancel)
 - [ ] **M4–M5** — Jobs API (`POST /jobs`, `GET /jobs/{id}`, cancel), idempotency keys
 - [ ] **M6** — PostgreSQL persistence with optimistic concurrency
 - [ ] **Stage 1** — Redis queue and background worker
@@ -65,15 +66,23 @@ anything merges.
 
 ```
 app/
-  main.py               FastAPI application and routes
+  main.py                        FastAPI application and routes
+  domain/
+    job.py                       Job entity, JobStatus, state machine rules
+  ports/
+    job_repository.py            JobRepository interface (what storage must do)
+  adapters/
+    memory_job_repository.py     in-memory JobRepository (tests, local dev)
 tests/
-  test_health.py        API tests (run in-process, no server needed)
+  test_health.py                 API tests (run in-process, no server needed)
+  test_job.py                    state machine rules: allowed, illegal, terminal
+  test_memory_job_repository.py  repository add/get behaviour
 docs/
-  decisions/            architecture decision records
+  decisions/                     architecture decision records
 .github/
-  workflows/ci.yml      CI: runs pytest on PRs and pushes to main
-pytest.ini              pytest config (adds project root to the import path)
-requirements.txt        pinned Python dependencies
+  workflows/ci.yml               CI: runs pytest on PRs and pushes to main
+pytest.ini                       pytest config (adds project root to the import path)
+requirements.txt                 pinned Python dependencies
 ```
 
 ## Design decisions
@@ -81,3 +90,5 @@ requirements.txt        pinned Python dependencies
 Recorded in [`docs/decisions/`](docs/decisions/):
 
 - [0001 — FastAPI app and project layout](docs/decisions/0001-fastapi-and-layout.md)
+- [0002 — Job state machine and repository port](docs/decisions/0002-state-machine-and-repository-port.md)
+
