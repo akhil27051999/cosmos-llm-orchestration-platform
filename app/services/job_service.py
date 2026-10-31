@@ -1,6 +1,6 @@
 import uuid
 
-from app.domain.job import Job
+from app.domain.job import Job, JobStatus
 from app.ports.job_repository import JobRepository
 
 class JobNotFound(LookupError):
@@ -21,4 +21,9 @@ class JobService:
         job = self._repo.get(job_id)
         if job is None:
             raise JobNotFound(job_id)
+        return job
+    
+    def cancel(self, job_id: uuid.UUID) -> Job:
+        job = self.get(job_id)
+        job.transition_to(JobStatus.CANCELLED)
         return job
