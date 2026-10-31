@@ -33,6 +33,6 @@ def test_updated_job_is_stored():
     job = Job()
     repo.add(job)
     fetched = repo.get(job.id)
-    fetched.cancel()
+    fetched.transition_to(JobStatus.CANCELLED)
     repo.update(fetched)
     assert repo.get(job.id).status == JobStatus.CANCELLED
