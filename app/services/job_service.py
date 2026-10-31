@@ -26,4 +26,5 @@ class JobService:
     def cancel(self, job_id: uuid.UUID) -> Job:
         job = self.get(job_id)
         job.transition_to(JobStatus.CANCELLED)
+        self._repo.update(job)
         return job
