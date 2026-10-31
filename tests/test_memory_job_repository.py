@@ -19,3 +19,11 @@ def test_changing_a_job_after_add_does_not_change_the_stored_job():
     repo.add(job)
     job.transition_to(JobStatus.RUNNING)
     assert repo.get(job.id).status == JobStatus.PENDING
+
+def test_changing_a_fetched_job_does_not_change_the_stored_job():
+    repo = InMemoryJobRepository()
+    job = Job()
+    repo.add(job)
+    fetched = repo.get(job.id)
+    fetched.transition_to(JobStatus.RUNNING)
+    assert repo.get(job.id).status == JobStatus.PENDING
