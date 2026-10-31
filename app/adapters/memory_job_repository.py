@@ -17,5 +17,5 @@ class InMemoryJobRepository:
             return None
         return replace(job)
     
-    def update(self, job: Job) -> Job:
+    def update(self, job: Job) -> None:
         self._jobs[job.id] = replace(job)
