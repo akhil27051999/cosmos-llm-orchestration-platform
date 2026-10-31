@@ -4,7 +4,7 @@
 
 An asynchronous job-orchestration platform for LLM workloads, built from scratch, one stage at a time, as a hands-on learning project.
 
-> **Current state:** domain layer built and tested — a `Job` state machine and a repository with an in-memory adapter. Next: the job service (M3), then the HTTP API (M4).
+> **Current state:** domain and service layers built and tested — a `Job` state machine, a repository port with an in-memory adapter, and a `JobService` (submit, get, cancel). Next: the HTTP API (M4).
 
 ## Why I'm building this
 
@@ -16,7 +16,7 @@ I've spent five years as a DevOps/SRE engineer running other people's distribute
 - [x] **M0.5** — CI on every PR, pinned dependencies, protected `main`
 - [x] **M1** — Job entity and state machine (pure Python)
 - [x] **M2** — Job ids, repository port, in-memory adapter
-- [ ] **M3** — Job service (submit, get, cancel)
+- [x] **M3** — Job service (submit, get, cancel)
 - [ ] **M4–M5** — Jobs API (`POST /jobs`, `GET /jobs/{id}`, cancel), idempotency keys
 - [ ] **M6** — PostgreSQL persistence with optimistic concurrency
 - [ ] **Stage 1** — Redis queue and background worker
@@ -72,11 +72,14 @@ app/
   ports/
     job_repository.py            JobRepository interface (what storage must do)
   adapters/
-    memory_job_repository.py     in-memory JobRepository (tests, local dev)
+    memory_job_repository.py     in-memory JobRepository; stores copies, like a real database
+  services/
+    job_service.py               JobService: submit, get, cancel; JobNotFound
 tests/
   test_health.py                 API tests (run in-process, no server needed)
   test_job.py                    state machine rules: allowed, illegal, terminal
-  test_memory_job_repository.py  repository add/get behaviour
+  test_memory_job_repository.py  repository add/get/update and copy behaviour
+  test_job_service.py            service use cases: submit, get, cancel
 docs/
   decisions/                     architecture decision records
 .github/
