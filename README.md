@@ -4,7 +4,7 @@
 
 An asynchronous job-orchestration platform for LLM workloads, built from scratch, one stage at a time, as a hands-on learning project.
 
-> **Current state:** domain and service layers built and tested — a `Job` state machine, a repository port with an in-memory adapter, and a `JobService` (submit, get, cancel). Next: the HTTP API (M4).
+> **Current state:** a working HTTP API — submit, get and cancel jobs over HTTP, with domain errors mapped to 404/409 — on top of a tested domain and service layer. Next: idempotency keys (M5).
 
 ## Why I'm building this
 
@@ -17,7 +17,8 @@ I've spent five years as a DevOps/SRE engineer running other people's distribute
 - [x] **M1** — Job entity and state machine (pure Python)
 - [x] **M2** — Job ids, repository port, in-memory adapter
 - [x] **M3** — Job service (submit, get, cancel)
-- [ ] **M4–M5** — Jobs API (`POST /jobs`, `GET /jobs/{id}`, cancel), idempotency keys
+- [x] **M4** — Jobs API: `POST /jobs`, `GET /jobs/{job_id}`, `POST /jobs/{job_id}/cancel`
+- [ ] **M5** — Idempotency keys on `POST /jobs`
 - [ ] **M6** — PostgreSQL persistence with optimistic concurrency
 - [ ] **Stage 1** — Redis queue and background worker
 - [ ] **Stage 3** — LLM agent loop with tool use and token budget
@@ -55,6 +56,23 @@ Then open:
 - [http://localhost:8000/health](http://localhost:8000/health) — health check
 - [http://localhost:8000/docs](http://localhost:8000/docs) — interactive API docs
 
+## Try the API
+
+With the server running:
+
+```bash
+# submit a job → 201, returns {"id": "...", "status": "pending"}
+curl -s -X POST http://localhost:8000/jobs
+
+# look it up (paste the id from above) → 200, or 404 if unknown
+curl -s http://localhost:8000/jobs/<job-id>
+
+# cancel it → 200; cancelling again → 409 Conflict
+curl -s -X POST http://localhost:8000/jobs/<job-id>/cancel
+```
+
+Or use the interactive docs at http://localhost:8000/docs.
+
 ## How changes land
 
 Every change goes through a pull request. GitHub Actions runs the test suite on
@@ -66,7 +84,7 @@ anything merges.
 
 ```
 app/
-  main.py                        FastAPI application and routes
+  main.py                        FastAPI routes, response model, error → HTTP status mapping
   domain/
     job.py                       Job entity, JobStatus, state machine rules
   ports/
@@ -76,10 +94,11 @@ app/
   services/
     job_service.py               JobService: submit, get, cancel; JobNotFound
 tests/
-  test_health.py                 API tests (run in-process, no server needed)
+  test_health.py                 health endpoint
   test_job.py                    state machine rules: allowed, illegal, terminal
   test_memory_job_repository.py  repository add/get/update and copy behaviour
   test_job_service.py            service use cases: submit, get, cancel
+  test_jobs_api.py               HTTP API: status codes, bodies, 404/409/422
 docs/
   decisions/                     architecture decision records
 .github/
