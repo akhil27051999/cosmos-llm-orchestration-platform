@@ -1,10 +1,12 @@
 import uuid
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.adapters.memory_job_repository import InMemoryJobRepository
 from app.services.job_service import JobService, JobNotFound
+from app.domain.job import InvalidTransition
 
 app = FastAPI(title="Cosmos", description="Asynchronous job-orchestration API for LLM workloads.", version="0.1.0")
 
@@ -30,3 +32,14 @@ def get_job(job_id: uuid.UUID) -> JobResponse:
     except JobNotFound as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     return JobResponse(id=job.id, status=job.status.value)
+
+@app.post("/jobs/{job_id}/cancel")
+def cancel_job(job_id: uuid.UUID) -> JobResponse:
+    try:
+        job = job_service.cancel(job_id)
+    except JobNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except InvalidTransition as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return JobResponse(id=job.id, status=job.status.value)
+
