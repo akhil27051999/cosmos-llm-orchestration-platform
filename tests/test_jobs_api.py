@@ -25,9 +25,9 @@ def test_get_job_returns_the_submitted_job():
 
 def test_get_unknown_job_returns_404_with_reason():
     job_id = uuid.uuid4()
-    response = client.get(f"/jobs/{id}")
+    response = client.get(f"/jobs/{job_id}")
     assert response.status_code == 404
-    assert str(id) in response.json()["detail"]
+    assert str(job_id) in response.json()["detail"]
 
 
 def test_get_job_with_malformed_id_returns_422():
