@@ -12,8 +12,12 @@ class JobService:
     def __init__(self, repo: JobRepository) -> None:
         self._repo = repo
 
-    def submit(self) -> tuple[Job, bool]:
-        job = Job()
+    def submit(self, idempotency_key: str | None = None) -> tuple[Job, bool]:
+        if idempotency_key is not None:
+            existing = self._repo.get_by_idempotency_key(idempotency_key)
+            if existing is not None:
+                return existing, False
+        job = Job(idempotency_key=idempotency_key)
         self._repo.add(job)
         return job, True
 
