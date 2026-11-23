@@ -50,3 +50,22 @@ def test_cancel_already_cancelled_job_raises_invalid_transition():
     service = JobService(repo)
     with pytest.raises(InvalidTransition):
         service.cancel(job.id)
+
+def test_same_idempotency_key_returns_the_same_job():
+    service = JobService(InMemoryJobRepository())
+    first, created_first = service.submit(idempotency_key="abc-123")
+    second, created_second = service.submit(idempotency_key="abc-123")
+    assert second.id == first.id
+    assert created_first is True
+    assert created_second is False
+
+def test_different_idempotency_keys_create_different_jobs():
+    service = JobService(InMemoryJobRepository())
+    first, _ = service.submit(idempotency_key="key-1")
+    second, _ = service.submit(idempotency_key="key-2")
+    assert first.id != second.id
+
+def test_submitted_job_keeps_its_idempotency_key():
+    service = JobService(InMemoryJobRepository())
+    job, _ = service.submit(idempotency_key="abc-123")
+    assert job.idempotency_key == "abc-123"
