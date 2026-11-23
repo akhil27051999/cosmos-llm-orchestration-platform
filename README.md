@@ -8,7 +8,7 @@ An asynchronous job-orchestration platform for LLM workloads, built from scratch
 
 ## Why I'm building this
 
-I've spent five years as a DevOps/SRE engineer running other people's distributed systems in production; this project is how I learn to *build* one. Cosmos covers the patterns behind real backend platforms (async job processing, queues and workers, idempotency, concurrency control, resilient LLM calls) and I'm writing every part by hand, one tested milestone at a time, so I understand the trade-offs behind each design decision, not just the end result.
+I've spent five years as a DevOps/SRE engineer running other people's distributed systems in production; this project is how I learn to *build* one. Cosmos covers the patterns behind real backend platforms (async job processing, queues and workers, idempotency, concurrency control, resilient LLM calls) and I build it module by module with an AI pair-programmer: Claude drafts the code and tests; I review every change, explain it back, and own every design decision, each one test-first and recorded in `docs/decisions/`. The goal is to understand the trade-offs behind each decision, not just the end result. What I learned each day is in [`docs/learning-log.md`](docs/learning-log.md).
 
 ## Status
 
