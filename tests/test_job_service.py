@@ -7,18 +7,18 @@ from app.services.job_service import JobService, JobNotFound
 
 def test_submit_returns_a_pending_job():
     service = JobService(InMemoryJobRepository())
-    job = service.submit()
+    job, _ = service.submit()
     assert job.status == JobStatus.PENDING
 
 def test_submitted_job_is_stored():
     repo = InMemoryJobRepository()
     service = JobService(repo)
-    job = service.submit()
+    job, _ = service.submit()
     assert repo.get(job.id) == job
 
 def test_get_returns_the_submitted_job():
     service = JobService(InMemoryJobRepository())
-    job = service.submit()
+    job, _ = service.submit()
     assert service.get(job.id) == job
 
 def test_get_unknown_id_raises_job_not_found():
@@ -28,13 +28,13 @@ def test_get_unknown_id_raises_job_not_found():
 
 def test_cancel_marks_the_job_cancelled():
     service = JobService(InMemoryJobRepository())
-    job = service.submit()
+    job, _ = service.submit()
     cancelled = service.cancel(job.id)
     assert cancelled.status == JobStatus.CANCELLED
 
 def test_cancelled_status_is_saved():
     service = JobService(InMemoryJobRepository())
-    job = service.submit()
+    job, _ = service.submit()
     service.cancel(job.id)
     assert service.get(job.id).status == JobStatus.CANCELLED
 

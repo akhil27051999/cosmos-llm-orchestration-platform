@@ -22,7 +22,7 @@ def health_check():
 
 @app.post("/jobs", status_code=201)
 def submit_job() -> JobResponse:
-    job = job_service.submit()
+    job, _ = job_service.submit()
     return JobResponse(id=job.id, status=job.status.value)
 
 @app.get("/jobs/{job_id}")

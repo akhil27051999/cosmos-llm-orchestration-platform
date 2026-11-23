@@ -12,10 +12,10 @@ class JobService:
     def __init__(self, repo: JobRepository) -> None:
         self._repo = repo
 
-    def submit(self) -> Job:
+    def submit(self) -> tuple[Job, bool]:
         job = Job()
         self._repo.add(job)
-        return job
+        return job, True
 
     def get(self, job_id: uuid.UUID) -> Job:
         job = self._repo.get(job_id)
