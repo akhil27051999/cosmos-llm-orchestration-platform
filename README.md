@@ -8,7 +8,7 @@ An asynchronous job-orchestration platform for LLM workloads, built from scratch
 
 ## Why I'm building this
 
-I've spent five years as a DevOps/SRE engineer running other people's distributed systems in production; this project is how I learn to *build* one. Cosmos covers the patterns behind real backend platforms (async job processing, queues and workers, idempotency, concurrency control, resilient LLM calls) and I build it module by module with an AI pair-programmer: Claude drafts the code and tests; I review every change, explain it back, and own every design decision, each one test-first and recorded in `docs/decisions/`. The goal is to understand the trade-offs behind each decision, not just the end result. What I learned each day is in [`docs/learning-log.md`](docs/learning-log.md).
+I have five years in tech and I'm early in my SRE career. Cosmos is where I build a production-style system end to end and then **operate it the way an SRE would**: ship it with GitOps, set SLOs, alert on burn rate, write runbooks, load-test it and break it on purpose. The application side covers the patterns real platforms depend on (async job processing, queues and workers, idempotency, concurrency control, resilient calls to a flaky LLM API). I build it module by module with an AI pair-programmer: Claude drafts the code and tests; I review every change, explain it back, and own every design decision, each one test-first and recorded in `docs/decisions/`. The goal is to understand the trade-offs behind each decision, not just the end result. What I learned each day is in [`docs/learning-log.md`](docs/learning-log.md).
 
 ## Status
 
@@ -18,10 +18,25 @@ I've spent five years as a DevOps/SRE engineer running other people's distribute
 - [x] **M2** — Job ids, repository port, in-memory adapter
 - [x] **M3** — Job service (submit, get, cancel)
 - [x] **M4** — Jobs API: `POST /jobs`, `GET /jobs/{job_id}`, `POST /jobs/{job_id}/cancel`
-- [ ] **M5** — Idempotency keys on `POST /jobs`
-- [ ] **M6** — PostgreSQL persistence with optimistic concurrency
-- [ ] **Stage 1** — Redis queue and background worker
-- [ ] **Stage 3** — LLM agent loop with tool use and token budget
+- [x] **M5** — Idempotency keys on `POST /jobs`
+
+**Part A: the system to operate**
+- [ ] **M6** — PostgreSQL, async SQLAlchemy, Alembic migrations, Docker Compose, optimistic concurrency
+- [ ] **Stage 1** — Redis queue and worker: `202 Accepted`, at-least-once, retries, dead-letter queue
+
+**Part B: ship it**
+- [ ] **S1 Containers** — multi-stage, non-root images; Trivy scan, SBOM and cosign signing in CI
+- [ ] **S2 Kubernetes** — Helm chart, probes, resources, PDB; HPA for the API, KEDA on queue depth
+- [ ] **S3 GitOps** — ArgoCD with dev/prod, Argo Rollouts canary, secrets kept out of Git
+
+**Part C: operate it**
+- [ ] **S4 Observability** — RED metrics, JSON logs with request ids, OpenTelemetry traces, dashboards
+- [ ] **S5 SLOs** — two SLOs, multi-window burn-rate alerts, one runbook per alert
+- [ ] **S6 Reliability** — k6 load test and capacity notes; chaos (kill a worker, the DB, Redis); a postmortem
+
+**Part D: the LLM dependency and the cloud**
+- [ ] **S7 LLM calls** — timeouts, retries with jitter, circuit breaker, rate limits, token and cost budget
+- [ ] **S8 Terraform** — managed cluster with remote state: apply, demo, destroy
 
 ## Tech stack
 
