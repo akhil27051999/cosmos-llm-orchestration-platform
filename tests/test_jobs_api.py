@@ -61,3 +61,25 @@ def test_cancel_already_cancelled_job_returns_409():
     client.post(f"/jobs/{created['id']}/cancel")
     response = client.post(f"/jobs/{created['id']}/cancel")
     assert response.status_code == 409
+
+def test_repeated_idempotency_key_returns_the_same_job_with_200():
+    headers = {"Idempotency-Key": "retry-abc-123"}
+    first = client.post("/jobs", headers=headers)
+    second = client.post("/jobs", headers=headers)
+    assert first.status_code == 201
+    assert second.status_code == 200
+    assert second.json() == first.json()
+
+
+def test_different_idempotency_keys_create_different_jobs():
+    first = client.post("/jobs", headers={"Idempotency-Key": "key-a"})
+    second = client.post("/jobs", headers={"Idempotency-Key": "key-b"})
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["id"] != second.json()["id"]
+
+
+def test_without_idempotency_key_every_post_creates_a_new_job():
+    first = client.post("/jobs")
+    second = client.post("/jobs")
+    assert first.json()["id"] != second.json()["id"]

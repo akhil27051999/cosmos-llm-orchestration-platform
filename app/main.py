@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -21,8 +21,13 @@ def health_check():
     return {"status": "ok"}
 
 @app.post("/jobs", status_code=201)
-def submit_job() -> JobResponse:
-    job = job_service.submit()
+def submit_job(
+    response: Response,
+    idempotency_key: str | None = Header(default=None),
+) -> JobResponse:
+    job, created = job_service.submit(idempotency_key=idempotency_key)
+    if not created:
+        response.status_code = 200
     return JobResponse(id=job.id, status=job.status.value)
 
 @app.get("/jobs/{job_id}")

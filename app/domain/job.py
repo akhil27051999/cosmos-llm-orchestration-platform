@@ -31,6 +31,7 @@ ALLOWED_TRANSITIONS = {
 class Job:
     id: uuid.UUID = field(default_factory=uuid.uuid4)
     status: JobStatus = JobStatus.PENDING
+    idempotency_key: str | None = None
 
     @property
     def is_terminal(self) -> bool:

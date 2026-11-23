@@ -36,3 +36,13 @@ def test_updated_job_is_stored():
     fetched.transition_to(JobStatus.CANCELLED)
     repo.update(fetched)
     assert repo.get(job.id).status == JobStatus.CANCELLED
+
+def test_job_can_be_found_by_idempotency_key():
+    repo = InMemoryJobRepository()
+    job = Job(idempotency_key="abc-123")
+    repo.add(job)
+    assert repo.get_by_idempotency_key("abc-123") == job
+
+def test_unknown_idempotency_key_returns_none():
+    repo = InMemoryJobRepository()
+    assert repo.get_by_idempotency_key("never-used") is None
