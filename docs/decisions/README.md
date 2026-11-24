@@ -12,7 +12,8 @@ says so. Every module PR adds or updates a record here.
 | [0004](0004-job-service-and-copies.md) | Job service, dependency injection and copy semantics | M3 | Accepted |
 | [0005](0005-http-api.md) | HTTP API shape and error mapping | M4 | Accepted |
 | [0006](0006-idempotency-keys.md) | Idempotency keys on `POST /jobs` | M5 | Accepted |
-| [0007](0007-sre-focused-roadmap.md) | An SRE-focused roadmap | all | Accepted |
+| [0007](0007-sre-focused-roadmap.md) | An SRE-focused roadmap | all | Accepted, amended by 0008 |
+| [0008](0008-roadmap-skill-gaps.md) | Close the roadmap's skill gaps | all | Accepted |
 
 **Template:** `# NNNN: Title` · `**Status:** Proposed/Accepted/Superseded by NNNN · **Date:** · **Milestone:**`,
 then `## Context`, `## Decision`, `## Alternatives considered`, `## Consequences`.

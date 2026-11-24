@@ -1,6 +1,6 @@
 # 0007: An SRE-focused roadmap
 
-**Status:** Accepted · **Date:** 2026-11-24 · **Scope:** whole project
+**Status:** Accepted, amended by [0008](0008-roadmap-skill-gaps.md) · **Date:** 2026-11-24 · **Scope:** whole project
 
 ## Context
 I'm early in my SRE career, with five years in tech. This project is my main evidence of SRE skill, so its value
