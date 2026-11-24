@@ -23,6 +23,23 @@ GitHub Actions CI on every PR, pinned dependencies, protected `main` branch (#5,
 - What does `permissions: contents: read` protect against?
 - Why is a CI check you've never seen fail untrustworthy?
 
+**Model answers**
+
+*Why trigger CI on both `pull_request` and `push` to `main`?*
+- The **PR run** tests the branch merged with `main` *at that moment*. After the squash merge, `main` is a new
+  commit, and other PRs may have merged in between. The **push run** tests what actually landed.
+- It also keeps `main`'s status and caches current: caches saved on the default branch are shared with PR branches.
+
+*What does `permissions: contents: read` protect against?*
+- It limits the `GITHUB_TOKEN` that every step receives to read-only access.
+- If a dependency or third-party action is compromised, it can't push code, edit workflows or create releases with
+  that token. This is least privilege, the same idea as an IAM role scoped to one bucket.
+
+*Why is a CI check you've never seen fail untrustworthy?*
+- A check that always passes might not run your tests at all (a wrong path, zero tests collected, `|| true`).
+- You only know it guards something once you've seen it go red for the right reason. That's why I broke a test on
+  purpose and watched CI fail.
+
 ---
 
 ## 2026-10-27: M1, Job state machine (#7)
@@ -40,6 +57,20 @@ table, `transition_to()` that refuses illegal moves, `InvalidTransition`, `is_te
 - A worker reports success just after a user cancels. What stops `cancelled → succeeded`?
 - Why is the state machine "necessary but not enough"? (The worker may hold a stale copy; that's the M6 version check.)
 
+**Model answers**
+
+*A worker reports success just after a user cancels. What stops `cancelled → succeeded`?*
+- `cancelled` is terminal and maps to an empty set in `ALLOWED_TRANSITIONS`, so `transition_to(SUCCEEDED)` raises
+  `InvalidTransition`, and the job is left unchanged because the check happens before the change.
+- That works only if the worker **reloads** the job and sees `cancelled`.
+
+*Why is the state machine "necessary but not enough"?*
+- The worker loaded the job while it was `running`. In its **stale copy**, `running → succeeded` is legal, so the
+  check passes, and saving that copy would overwrite the cancel (a lost update).
+- The fix in M6 is **optimistic concurrency**: a `version` column and `UPDATE … WHERE id = ? AND version = ?`.
+  If 0 rows change, someone else wrote first: reload and decide again.
+- The state machine checks if a move is *legal*; the version check proves the move is based on *current* data.
+
 ---
 
 ## 2026-10-28: M2, IDs and the repository port (#8)
@@ -56,6 +87,25 @@ decision record 0002.
 - Why should the service never import a concrete database adapter?
 - UUIDv4 vs auto-increment IDs: trade-offs?
 
+**Model answers**
+
+*Why should the service never import a concrete database adapter?*
+- The service depends on the **port** (`JobRepository`), and `main.py` picks the adapter. That is dependency
+  inversion.
+- Unit tests run in milliseconds against the in-memory adapter, with no database needed.
+- Swapping in Postgres in M6 means writing one new adapter; the service and its tests stay the same.
+
+*UUIDv4 vs auto-increment IDs: trade-offs?*
+
+| | UUIDv4 | Auto-increment |
+|---|---|---|
+| Generated | in the app, no DB round trip, unique across nodes | by the DB, one sequence |
+| Guessable | no (no `/jobs/1`, `/jobs/2` enumeration) | yes; also leaks volume |
+| Size | 16 bytes | 4–8 bytes |
+| Index | random → scattered B-tree inserts | ordered, compact |
+
+- **UUIDv7** keeps the benefits and adds time ordering, which fixes the index problem. It's an open M6 decision.
+
 ---
 
 ## 2026-10-29 → 31: M3, Job service (#9)
@@ -70,6 +120,19 @@ adapter now stores and returns **copies**.
 **Interview questions**
 - How can a fake/in-memory dependency hide a real bug? How do you prevent it?
 - Where should "not found → error" be decided, and why there?
+
+**Model answers**
+
+*How can a fake or in-memory dependency hide a real bug? How do you prevent it?*
+- My fake dict stored **the same object** the service changed, so a cancel "saved" itself even without `update()`.
+  A real database returns copies, so production would have lost the cancel.
+- Prevention: make the fake behave like the real thing (store and return copies). Run **one shared contract test
+  suite** against both the fake and the real adapter (M6). Keep a few integration tests against a real Postgres.
+
+*Where should "not found → error" be decided, and why there?*
+- **In the service.** The repository reports facts (`None`). Whether "missing" is an error depends on the use case.
+  For `cancel`, it is (`JobNotFound`). For the M5 idempotency lookup, missing is normal and means "create a new job".
+- HTTP then maps `JobNotFound` to 404 in one exception handler.
 
 ---
 
@@ -89,6 +152,20 @@ adapter now stores and returns **copies**.
 - Why 201 now and 202 later (once a worker runs jobs)?
 - Why map errors in one exception handler instead of try/except in every route?
 
+**Model answers**
+
+*Why 201 now and 202 later (once a worker runs jobs)?*
+- **201 Created:** the resource exists and the request is complete.
+- **202 Accepted:** "I've taken your request; the work happens later." Once a worker processes jobs from a queue,
+  POST only enqueues, so 202 tells the client to poll `GET /jobs/{job_id}`. It's usually sent with a `Location`
+  header.
+
+*Why map errors in one exception handler instead of try/except in every route?*
+- **One place:** every route returns the same error shape, and a new route can't forget the mapping.
+- **Thin routes:** each route only calls the service and returns a response.
+- **Clean layers:** the domain raises domain errors (`JobNotFound`, `InvalidTransition`), and only the HTTP layer
+  knows about 404 and 409.
+
 ---
 
 ## 2026-11-23 → 24: M5, idempotency keys (PR #11)
@@ -106,7 +183,7 @@ adapter now stores and returns **copies**.
 - Walk through a duplicate POST, layer by layer.
 - How do you make idempotency safe under concurrency?
 
-**Model answers**
+**Model answers** (Q1 also answers "walk through a duplicate POST"; Q3 answers "safe under concurrency")
 
 *Q1. The same key arrives twice. What happens, layer by layer?*
 1. **HTTP:** the client sends `POST /jobs` with the header `Idempotency-Key: abc`. FastAPI reads it into the
@@ -138,4 +215,4 @@ that last step the client gets a 500 instead of a clean replay.
 
 ---
 
-<!-- Add the next entry here after each module: date, PR, built, concepts, interview questions. -->
+<!-- Add the next entry here after each module: date, PR, built, concepts, interview questions, model answers. -->
