@@ -4,7 +4,7 @@ What I built, block by block, the concepts behind each block, and the questions 
 Newest modules at the bottom. Each module links to the PR that holds the code.
 
 **How to use this log**
-1. Read a block's code and **Built** line.
+1. Read a block's code, then **What it is, line by line**, then the **Built** line.
 2. Cover the **Model answers** and answer the **Questions** out loud.
 3. Compare. If you couldn't answer, re-read **Concepts** and open the file in the repo.
 
@@ -22,6 +22,14 @@ uvicorn[standard]==0.54.0
 pytest==9.1.1
 httpx==0.28.1
 ```
+**What it is, line by line**
+- `fastapi==0.162.0`: the web framework. `==` means "exactly this version", nothing newer.
+- `uvicorn[standard]==0.54.0`: the server that runs the app. `[standard]` is an "extra": it also installs the
+  faster optional parts (uvloop for the event loop, httptools for parsing HTTP).
+- `pytest==9.1.1`: the test runner. Only needed for development and CI, but kept in one file for simplicity.
+- `httpx==0.28.1`: an HTTP client. We never import it ourselves; FastAPI's `TestClient` uses it under the hood.
+- `pip install -r requirements.txt` reads this file line by line and installs each package.
+
 **Built:** the four packages the project needs, each pinned to an exact version.
 
 **Concepts**
@@ -54,6 +62,16 @@ app = FastAPI(title="Cosmos", description="Asynchronous job-orchestration API fo
 def health_check():
     return {"status": "ok"}
 ```
+**What it is, line by line**
+- `from fastapi import FastAPI`: imports the class that builds a web application.
+- `app = FastAPI(title=..., description=..., version=...)`: creates **the** application object. uvicorn looks for
+  this exact name when you run `uvicorn app.main:app`. The three arguments only fill the docs page at `/docs`.
+- `@app.get("/health")`: a decorator. It tells `app`: "when a `GET` request arrives for `/health`, call the
+  function right below me".
+- `def health_check():`: the handler function. Its name doesn't matter to HTTP; only the path in the decorator does.
+- `return {"status": "ok"}`: a plain Python dict. FastAPI turns it into the JSON body `{"status": "ok"}` and
+  sends it with status 200 (the default for GET).
+
 **Built:** the application object and one endpoint that returns `{"status": "ok"}`.
 
 **Concepts**
@@ -87,6 +105,12 @@ def health_check():
 pythonpath = .
 testpaths = tests
 ```
+**What it is, line by line**
+- `[pytest]`: the section header. pytest only reads settings under this name in `pytest.ini`.
+- `pythonpath = .`: adds the project root (`.`) to Python's import search path while tests run, so test files
+  can write `from app.main import app`.
+- `testpaths = tests`: when you just type `pytest`, it searches only the `tests/` folder for tests.
+
 **Built:** pytest settings for the project.
 
 **Concepts**
@@ -116,6 +140,16 @@ def test_health_check():
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 ```
+**What it is, line by line**
+- `from fastapi.testclient import TestClient`: a fake browser that talks to the app directly, in the same process.
+- `from app.main import app`: imports the application object from Block 2.
+- `client = TestClient(app)`: wraps the app. `client.get(...)` now calls the app as if a real request came in.
+  It's created once at the top, and every test in the file uses it.
+- `def test_health_check():`: the name starts with `test_`, so pytest finds and runs it automatically.
+- `response = client.get("/health")`: sends `GET /health` and keeps the full response.
+- `assert response.status_code == 200`: if the status isn't 200, the test fails and pytest shows both values.
+- `assert response.json() == {"status": "ok"}`: parses the JSON body and compares it with the expected dict.
+
 **Built:** the first test, which calls the endpoint and checks the status and body.
 
 **Concepts**
@@ -152,6 +186,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 ```
+**What it is, line by line**
+- `on:`: the list of events that start this workflow.
+- `pull_request: branches: [main]`: run when a PR **targeting** `main` is opened or gets new commits.
+- `push: branches: [main]`: run when commits land on `main` (here, when a PR is merged).
+- `permissions: contents: read`: the automatic token every step gets may only read the repository, never write.
+- `concurrency: group: ${{ github.workflow }}-${{ github.ref }}`: runs with the same group name share one "lane".
+  `github.workflow` is `CI`; `github.ref` is the branch, so the group is something like `CI-refs/pull/12/merge`.
+- `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`: an expression that is `true` for PR runs and
+  `false` for pushes. True means "a new run in this lane cancels the older one still running".
+
 **Built:** when CI runs, what its token may do, and what happens to older runs of the same branch.
 
 **Concepts**
@@ -191,6 +235,18 @@ jobs:
       - run: pip install -r requirements.txt
       - run: pytest -v
 ```
+**What it is, line by line**
+- `jobs: test:`: the workflow has one job, with the id `test`.
+- `name: test`: the name shown on the PR. Branch protection requires a check with exactly this name.
+- `runs-on: ubuntu-26.04`: GitHub starts a fresh Ubuntu 26.04 virtual machine for this job.
+- `timeout-minutes: 10`: kill the job if it runs longer than 10 minutes.
+- `uses: actions/checkout@v7`: a ready-made action that clones the repository into the machine.
+- `uses: actions/setup-python@v7` with `python-version: "3.12"`: installs Python 3.12.
+  `cache: pip` saves pip's downloads between runs, keyed by `requirements.txt`.
+- `run: pip install -r requirements.txt`: a shell command; installs the pinned packages.
+- `run: pytest -v`: runs the tests, `-v` lists each test by name. If any test fails, pytest exits with a non-zero
+  code, the step fails, and the check turns red.
+
 **Built:** one job named `test`: check out, install Python 3.12 with a pip cache, install pinned deps, run pytest.
 
 **Concepts**
@@ -247,6 +303,14 @@ class JobStatus(Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 ```
+**What it is, line by line**
+- `class JobStatus(Enum):`: a new type whose possible values are fixed. It inherits from `Enum`
+  (`from enum import Enum` at the top of the file).
+- `PENDING = "pending"`: one member. `PENDING` is the **name** you use in code (`JobStatus.PENDING`);
+  `"pending"` is the **value**, used when the status is sent as JSON or stored.
+- The five lines together are the complete list. `JobStatus("pending")` turns a string back into a member, and
+  `JobStatus("bogus")` raises an error.
+
 **Built:** the five statuses a job can have.
 
 **Concepts**
@@ -270,6 +334,15 @@ class InvalidTransition(ValueError):
         self.target = target
         super().__init__(f"cannot move from {start.value} to {target.value}")
 ```
+**What it is, line by line**
+- `class InvalidTransition(ValueError):`: a new exception type that **is a** `ValueError`, so code catching
+  `ValueError` would catch it too.
+- `def __init__(self, start, target):`: runs when you write `InvalidTransition(JobStatus.PENDING, JobStatus.FAILED)`.
+- `self.start = start` / `self.target = target`: saves both statuses on the error object, so code can read
+  `error.start` later.
+- `super().__init__(f"cannot move from {start.value} to {target.value}")`: calls the parent `ValueError` with the
+  message, for example `cannot move from pending to failed`. `str(error)` now returns that text.
+
 **Built:** the error raised for an illegal move, carrying both statuses and a readable message.
 
 **Concepts**
@@ -297,6 +370,14 @@ ALLOWED_TRANSITIONS = {
     JobStatus.CANCELLED: set(),
 }
 ```
+**What it is, line by line**
+- `ALLOWED_TRANSITIONS = { ... }`: a dict, defined once at module level (not inside a class).
+- Each **key** is a status; each **value** is a set of the statuses it may move to next.
+- `JobStatus.PENDING: {JobStatus.RUNNING, JobStatus.CANCELLED}`: a pending job can start or be cancelled.
+- `JobStatus.RUNNING: {SUCCEEDED, FAILED, CANCELLED}`: a running job can finish either way, or be cancelled.
+- `JobStatus.SUCCEEDED: set()` (and FAILED, CANCELLED): an empty set, so no move is allowed. These are the
+  terminal states. Note `set()`, not `{}`: `{}` would be an empty **dict**.
+
 **Built:** the whole state machine as one table: for each status, where it may go next.
 
 **Concepts**
@@ -333,6 +414,21 @@ class Job:
             raise InvalidTransition(self.status, target)
         self.status = target
 ```
+**What it is, line by line**
+- `@dataclass`: generates the boring methods for you: `__init__` (so `Job(status=...)` works), `__repr__`
+  (readable printing) and `__eq__` (two jobs with the same fields are `==`).
+- `id: uuid.UUID = field(default_factory=uuid.uuid4)`: a fresh random id for every new job (explained in M2).
+- `status: JobStatus = JobStatus.PENDING`: new jobs start pending unless you pass another status.
+- `idempotency_key: str | None = None`: either a string or nothing; nothing by default (M5).
+- `@property` + `def is_terminal(self) -> bool:`: read it as `job.is_terminal`, without `()`.
+- `return not ALLOWED_TRANSITIONS[self.status]`: looks up this job's allowed moves. An empty set counts as
+  "false", so `not` turns it into `True` (terminal); a non-empty set gives `False`.
+- `def transition_to(self, target):`: the only way the status should change.
+- `allowed = ALLOWED_TRANSITIONS[self.status]`: the set of legal next statuses from where the job is now.
+- `if target not in allowed: raise InvalidTransition(self.status, target)`: illegal → stop here with an error.
+  The next line never runs, so the status stays as it was.
+- `self.status = target`: only reached if the move is legal.
+
 **Built:** the job itself. It starts `pending`, knows if it's finished, and changes status only through
 `transition_to`.
 
@@ -368,6 +464,17 @@ def test_illegal_moves_are_rejected(start, target):
         job.transition_to(target)
     assert job.status == start
 ```
+**What it is, line by line**
+- `@pytest.mark.parametrize("start, target", [ ... ])`: run the test below once per pair in the list. The two
+  names in the string become the function's two parameters.
+- `(JobStatus.PENDING, JobStatus.SUCCEEDED)`: one case: start at pending, try to jump straight to succeeded.
+- `def test_illegal_moves_are_rejected(start, target):`: pytest fills `start` and `target` from the current pair.
+- `job = Job(status=start)`: a job that begins in the start status.
+- `with pytest.raises(InvalidTransition):`: "the code inside this block must raise `InvalidTransition`". If it
+  doesn't raise, the test fails.
+- `job.transition_to(target)`: the illegal move we expect to be refused.
+- `assert job.status == start`: after the refused move, the status is still the original one.
+
 **Built:** one test function that checks many illegal moves, and that each one leaves the status unchanged.
 
 **Concepts**
@@ -402,6 +509,13 @@ def test_illegal_moves_are_rejected(start, target):
 ```python
 id: uuid.UUID = field(default_factory=uuid.uuid4)
 ```
+**What it is, line by line**
+- `id`: the field name. (This is the one legitimate `id` in the code: the attribute `job.id`.)
+- `: uuid.UUID`: a type hint: this field holds a UUID object.
+- `field(...)`: from `dataclasses`; lets you configure a field beyond a simple default.
+- `default_factory=uuid.uuid4`: "to get a default, **call** `uuid.uuid4`". Note there's no `()` after `uuid4`:
+  we pass the function itself, and the dataclass calls it once per new `Job`.
+
 **Built:** each new `Job` gets its own random UUID.
 
 **Concepts**
@@ -437,6 +551,16 @@ class JobRepository(Protocol):
     def update(self, job: Job) -> None: ...                                  # M3
     def get_by_idempotency_key(self, idempotency_key: str) -> Job | None: ... # M5
 ```
+**What it is, line by line**
+- `class JobRepository(Protocol):`: declares an interface. `Protocol` comes from `typing`.
+- `def add(self, job: Job) -> None: ...`: any repository must have an `add` that takes a job and returns nothing.
+  The `...` means "no body here"; this is a signature only.
+- `def get(self, job_id: uuid.UUID) -> Job | None: ...`: takes an id; returns the job, or `None` if it doesn't exist.
+- `def update(self, job: Job) -> None: ...`: saves changes to a job that already exists (added in M3).
+- `def get_by_idempotency_key(self, idempotency_key: str) -> Job | None: ...`: find a job by its key (added in M5).
+- Nobody inherits from this class. `InMemoryJobRepository` just has methods with the same names and shapes, and
+  that's enough to fit.
+
 **Built:** a description of what the service needs from storage, with no implementation.
 
 **Concepts**
@@ -471,6 +595,16 @@ class InMemoryJobRepository:
             return None
         return replace(job)
 ```
+**What it is, line by line**
+- `class InMemoryJobRepository:`: note there's no `(JobRepository)`: it fits the port by shape, not by inheritance.
+- `def __init__(self) -> None:`: runs once when you create it with `InMemoryJobRepository()`.
+- `self._jobs: dict[uuid.UUID, Job] = {}`: an empty dict that maps an id to a job. This dict **is** the storage.
+- `def add(self, job)`: `self._jobs[job.id] = replace(job)` stores a copy of the job under its id.
+- `def get(self, job_id)`: `job = self._jobs.get(job_id)` looks the id up; `.get` returns `None` when the key is
+  missing instead of raising an error.
+- `if job is None: return None`: not found → say so with `None`.
+- `return replace(job)`: found → return a **copy**, so the caller can't change the stored job by accident.
+
 **Built:** storage in a dict keyed by job id. (The `replace(...)` copies arrived in M3; see there.)
 
 **Concepts**
@@ -500,6 +634,13 @@ class JobNotFound(LookupError):
         self.job_id = job_id
         super().__init__(f"job {job_id} not found")
 ```
+**What it is, line by line**
+- `class JobNotFound(LookupError):`: a new exception that **is a** `LookupError`, Python's family for "not found".
+- `def __init__(self, job_id: uuid.UUID):`: runs on `JobNotFound(job_id)`.
+- `self.job_id = job_id`: keeps the missing id on the error, for code that needs it.
+- `super().__init__(f"job {job_id} not found")`: the message the API sends back, for example
+  `job 3f2a… not found`.
+
 **Built:** the error for an id that doesn't exist.
 
 **Concepts**
@@ -521,6 +662,12 @@ class JobService:
     def __init__(self, repo: JobRepository) -> None:
         self._repo = repo
 ```
+**What it is, line by line**
+- `class JobService:`: the class holding the use cases.
+- `def __init__(self, repo: JobRepository) -> None:`: whoever creates the service must hand it a repository.
+  The type hint names the **port**, not a concrete class.
+- `self._repo = repo`: keeps it, so `submit`, `get` and `cancel` can use `self._repo` later.
+
 **Built:** the service receives its repository instead of creating one.
 
 **Concepts**
@@ -549,6 +696,17 @@ def cancel(self, job_id: uuid.UUID) -> Job:
     self._repo.update(job)
     return job
 ```
+**What it is, line by line**
+- `def get(self, job_id) -> Job:`: always returns a real `Job`, never `None`.
+- `job = self._repo.get(job_id)`: asks storage; may get `None`.
+- `if job is None: raise JobNotFound(job_id)`: turns "nothing found" into an error the caller can't ignore.
+- `return job`: found.
+- `def cancel(self, job_id) -> Job:`
+- `job = self.get(job_id)`: reuses `get`, so a missing id raises `JobNotFound` here too.
+- `job.transition_to(JobStatus.CANCELLED)`: the domain checks the move; an illegal one raises and stops here.
+- `self._repo.update(job)`: saves the changed job. Without this line, the change exists only in our copy.
+- `return job`: hands the cancelled job back to the caller (the route).
+
 **Built:** `get` turns `None` into `JobNotFound`; `cancel` loads, changes, **saves** and returns the job.
 
 **Concepts**
@@ -571,6 +729,15 @@ def add(self, job: Job) -> None:
 def update(self, job: Job) -> None:
     self._jobs[job.id] = replace(job)
 ```
+**What it is, line by line**
+- `replace(job)`: comes from `from dataclasses import replace`. It builds a **new** `Job` with the same fields,
+  a copy.
+- `self._jobs[job.id] = replace(job)` in `add`: what's stored is a copy, so changing the caller's `job` later
+  doesn't touch storage.
+- `update` does the same: overwrite the stored entry with a copy of the changed job.
+- Together with `get` returning a copy, this makes the fake behave like a database: you only change what's stored
+  by calling `add` or `update`.
+
 **Built:** `update` in the port and adapter, and the adapter now saves and returns copies.
 
 **Concepts**
@@ -600,6 +767,14 @@ app = FastAPI(...)
 
 job_service = JobService(InMemoryJobRepository())
 ```
+**What it is, line by line**
+- `app = FastAPI(...)`: the application (from M0).
+- `job_service = JobService(InMemoryJobRepository())`: two steps on one line, read inside-out:
+  `InMemoryJobRepository()` creates an empty repository; `JobService(...)` creates the service and hands it that
+  repository.
+- This line runs **once**, when Python first imports `app.main`. Every request later uses this same
+  `job_service`.
+
 **Built:** one service with one repository, created once when the app starts.
 
 **Concepts**
@@ -622,6 +797,12 @@ class JobResponse(BaseModel):
     id: uuid.UUID
     status: str
 ```
+**What it is, line by line**
+- `class JobResponse(BaseModel):`: a Pydantic model, so FastAPI knows how to validate it and turn it into JSON.
+- `id: uuid.UUID`: the job's id. In JSON it becomes a string like `"3f2a…"`.
+- `status: str`: the status as text, like `"pending"`.
+- Two fields only: this is everything a client sees about a job.
+
 **Built:** the public JSON shape of a job.
 
 **Concepts**
@@ -649,6 +830,18 @@ def cancel_job(job_id: uuid.UUID) -> JobResponse:
     job = job_service.cancel(job_id)
     return JobResponse(id=job.id, status=job.status.value)
 ```
+**What it is, line by line**
+- `@app.get("/jobs/{job_id}")`: handles `GET /jobs/<something>`. The `{job_id}` part is captured from the path.
+- `def get_job(job_id: uuid.UUID) -> JobResponse:`: the parameter name must match `{job_id}`. The hint
+  `uuid.UUID` makes FastAPI convert the text to a UUID, or return 422 if it isn't one. `-> JobResponse` tells
+  FastAPI the shape of the reply.
+- `job = job_service.get(job_id)`: may raise `JobNotFound` (handled in Block 4).
+- `return JobResponse(id=job.id, status=job.status.value)`: builds the reply. `.value` turns
+  `JobStatus.PENDING` into `"pending"`.
+- `@app.post("/jobs/{job_id}/cancel")`: handles `POST /jobs/<id>/cancel`.
+- `job = job_service.cancel(job_id)`: may raise `JobNotFound` (404) or `InvalidTransition` (409).
+- The return line is the same as in `get_job`: same response shape.
+
 **Built:** read one job and cancel one job. (`POST /jobs` is shown in M5, where it changed.)
 
 **Concepts**
@@ -675,6 +868,15 @@ async def job_not_found(request: Request, error: JobNotFound) -> JSONResponse:
 async def invalid_transition(request: Request, error: InvalidTransition) -> JSONResponse:
     return JSONResponse(status_code=409, content={"detail": str(error)})
 ```
+**What it is, line by line**
+- `@app.exception_handler(JobNotFound)`: "if any route lets a `JobNotFound` escape, call the function below
+  instead of returning a 500".
+- `async def job_not_found(request: Request, error: JobNotFound) -> JSONResponse:`: FastAPI passes the request and
+  the exception object. It's `async` because Starlette's handlers are; it does no waiting.
+- `return JSONResponse(status_code=404, content={"detail": str(error)})`: the reply: status 404, body
+  `{"detail": "job … not found"}`.
+- The second handler is the same pattern: `InvalidTransition` → 409 with the "cannot move from … to …" message.
+
 **Built:** domain errors become HTTP responses in one place.
 
 **Concepts**
@@ -698,6 +900,14 @@ def test_cancel_already_cancelled_job_returns_409():
     response = client.post(f"/jobs/{created['id']}/cancel")
     assert response.status_code == 409
 ```
+**What it is, line by line**
+- `created = client.post("/jobs").json()`: create a fresh job for this test and keep its JSON
+  (`{"id": ..., "status": "pending"}`).
+- `client.post(f"/jobs/{created['id']}/cancel")`: first cancel; should succeed. The f-string puts the id into
+  the URL.
+- `response = client.post(f"/jobs/{created['id']}/cancel")`: second cancel of the same job.
+- `assert response.status_code == 409`: the second cancel must be refused as a conflict.
+
 **Built:** API tests for every status code: 201, 200, 404, 409, 422.
 
 **Concepts**
@@ -723,6 +933,11 @@ def test_cancel_already_cancelled_job_returns_409():
 ```python
 idempotency_key: str | None = None
 ```
+**What it is, line by line**
+- `idempotency_key`: a new field on `Job`.
+- `: str | None`: it holds either a string (the key the client sent) or `None` (no key).
+- `= None`: the default, so `Job()` still works without a key, exactly like before M5.
+
 **Built:** a job remembers which key created it, if any.
 
 **Concepts**
@@ -753,6 +968,16 @@ def get_by_idempotency_key(self, idempotency_key: str) -> Job | None:
         return None
     return self.get(job_id)
 ```
+**What it is, line by line**
+- `self._idempotency_keys: dict[str, uuid.UUID] = {}`: a second dict, created in `__init__`, mapping a key to a
+  job **id** (not to the job itself).
+- In `add`: after storing the job, `if job.idempotency_key is not None:` only jobs that have a key are indexed.
+- `self._idempotency_keys[job.idempotency_key] = job.id`: remember "this key → this job's id".
+- `def get_by_idempotency_key(self, idempotency_key)`:
+- `job_id = self._idempotency_keys.get(idempotency_key)`: look the key up; `None` if never seen.
+- `if job_id is None: return None`: unknown key.
+- `return self.get(job_id)`: known key → fetch the job by id, through the normal `get`, which returns a copy.
+
 **Built:** a second dict `key → job id`, and a lookup by key.
 
 **Concepts**
@@ -779,6 +1004,16 @@ def submit(self, idempotency_key: str | None = None) -> tuple[Job, bool]:
     self._repo.add(job)
     return job, True
 ```
+**What it is, line by line**
+- `def submit(self, idempotency_key: str | None = None) -> tuple[Job, bool]:`: the key is optional; the method
+  returns two things: the job, and whether it was newly created.
+- `if idempotency_key is not None:`: only look up when a key was sent.
+- `existing = self._repo.get_by_idempotency_key(idempotency_key)`: has this key been used before?
+- `if existing is not None: return existing, False`: yes → hand back the old job, `False` = "not created now".
+- `job = Job(idempotency_key=idempotency_key)`: no key, or a new key → make a new job (the key may be `None`).
+- `self._repo.add(job)`: store it (this also indexes the key, Block 2).
+- `return job, True`: `True` = "created now".
+
 **Built:** a known key returns the existing job with `False`; otherwise a new job is created and returned with
 `True`.
 
@@ -800,6 +1035,16 @@ def submit_job(
         response.status_code = 200
     return JobResponse(id=job.id, status=job.status.value)
 ```
+**What it is, line by line**
+- `@app.post("/jobs", status_code=201)`: handles `POST /jobs`; the default status for success is 201.
+- `response: Response,`: FastAPI hands the route the outgoing response object, so the code can change its status.
+- `idempotency_key: str | None = Header(default=None),`: "read this value from the request **headers**, not the
+  URL or body". FastAPI looks for the header `idempotency-key` (it swaps `_` for `-`; case doesn't matter).
+  Missing header → `None`.
+- `job, created = job_service.submit(idempotency_key=idempotency_key)`: unpack the two returned values.
+- `if not created: response.status_code = 200`: a replay → change 201 to 200.
+- `return JobResponse(...)`: the same body either way.
+
 **Built:** the route reads the header, defaults to 201, and switches to 200 on a replay.
 
 **Concepts**
@@ -819,6 +1064,14 @@ def test_repeated_idempotency_key_returns_the_same_job_with_200():
     assert second.status_code == 200
     assert second.json() == first.json()
 ```
+**What it is, line by line**
+- `headers = {"Idempotency-Key": "retry-abc-123"}`: the header a retrying client would send.
+- `first = client.post("/jobs", headers=headers)`: the original request.
+- `second = client.post("/jobs", headers=headers)`: the retry, with the same key.
+- `assert first.status_code == 201`: the first one created a job.
+- `assert second.status_code == 200`: the retry did not create one.
+- `assert second.json() == first.json()`: and it got back exactly the same job (same id, same status).
+
 **Built:** tests at all three layers (repository, service, API) for same key, different keys and no key.
 
 **Concepts**
