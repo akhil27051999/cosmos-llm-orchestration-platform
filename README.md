@@ -128,4 +128,9 @@ Recorded in [`docs/decisions/`](docs/decisions/):
 
 - [0001 — FastAPI app and project layout](docs/decisions/0001-fastapi-and-layout.md)
 - [0002 — Job state machine and repository port](docs/decisions/0002-state-machine-and-repository-port.md)
+- [0003 — CI on every change and a protected `main`](docs/decisions/0003-ci-and-branch-protection.md)
+- [0004 — Job service, dependency injection and copy semantics](docs/decisions/0004-job-service-and-copies.md)
+- [0005 — HTTP API shape and error mapping](docs/decisions/0005-http-api.md)
+- [0006 — Idempotency keys on `POST /jobs`](docs/decisions/0006-idempotency-keys.md)
+- [0007 — An SRE-focused roadmap](docs/decisions/0007-sre-focused-roadmap.md)
 
